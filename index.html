@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>⚡ 超人養成系統</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0a0f1e;font-family:'Nunito','Noto Sans TC',sans-serif;color:#f1f5f9;min-height:100vh}
+  ::-webkit-scrollbar{width:0}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;position:relative;padding-bottom:90px}
+  button,input,select{font-family:inherit}
+  input,select{width:100%;padding:10px 12px;border-radius:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;font-size:0.9rem;outline:none;margin-top:4px}
+  input::placeholder{color:#475569}
+  .btn-primary{padding:12px 20px;border-radius:12px;border:none;background:linear-gradient(135deg,#6366f1,#818cf8);color:#fff;font-weight:800;cursor:pointer;font-size:0.9rem;box-shadow:0 4px 14px rgba(99,102,241,0.4);transition:all 0.2s;width:100%}
+  .btn-primary:hover{transform:translateY(-1px)}
+  .btn-gold{background:linear-gradient(135deg,#f59e0b,#fcd34d)!important;color:#1a1a2e!important;box-shadow:0 4px 14px rgba(245,158,11,0.4)!important}
+  .btn-green{background:linear-gradient(135deg,#10b981,#34d399)!important;color:#fff!important;box-shadow:0 4px 14px rgba(16,185,129,0.4)!important}
+  .btn-red{background:linear-gradient(135deg,#ef4444,#f87171)!important;color:#fff!important;box-shadow:0 4px 14px rgba(239,68,68,0.3)!important}
+  @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes fadeIn{from{opacity:0;transform:scale(0.97)}to{opacity:1;transform:scale(1)}}
+  @keyframes particleFly{0%{transform:translateY(0) scale(1);opacity:1}100%{transform:translateY(-220px) scale(0.3);opacity:0}}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.55}}
+  @keyframes toastIn{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes glow{0%,100%{box-shadow:0 0 10px currentColor}50%{box-shadow:0 0 28px currentColor}}
+  @keyframes rankPop{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+  @keyframes barGrow{from{width:0}to{width:var(--w)}}
+  @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .pulse-anim{animation:pulse 2s infinite}
+  .glow-anim{animation:glow 2s infinite}
+  .fade-in{animation:fadeIn 0.25s ease}
+  .float-anim{animation:float 3s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="particles" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999"></div>
+<div id="toast-container" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:440px;z-index:3000"></div>
+
+<script>
+// ─────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────
+const LEVELS=[
+  {level:1,name:"萌新小超人",minXP:0,color:"#78C6FF",badge:"🌟"},
+  {level:2,name:"見習超人",minXP:100,color:"#6EE7B7",badge:"⚡"},
+  {level:3,name:"銅牌超人",minXP:250,color:"#FCD34D",badge:"🥉"},
+  {level:5,name:"銀牌超人",minXP:500,color:"#C0C0C0",badge:"🥈"},
+  {level:8,name:"金牌超人",minXP:900,color:"#FFD700",badge:"🥇"},
+  {level:10,name:"特級金牌超人",minXP:1400,color:"#F97316",badge:"👑"},
+  {level:15,name:"超時空超人",minXP:2200,color:"#A855F7",badge:"🔮"},
+  {level:20,name:"宇宙守護超人",minXP:3500,color:"#EC4899",badge:"🌌"},
+];
+const ACHIEVEMENTS=[
+  {id:"first_task",name:"初戰告捷",desc:"完成第一個任務",icon:"⚔️"},
+  {id:"streak_3",name:"三連勝",desc:"連續3天完成任務",icon:"🔥"},
+  {id:"streak_7",name:"一週英雄",desc:"連續7天登入",icon:"🗓️"},
+  {id:"coins_100",name:"財富積累",desc:"累積100金幣",icon:"💰"},
+  {id:"level_5",name:"銀牌晉升",desc:"達到5級",icon:"🥈"},
+  {id:"redeem_1",name:"首次兌換",desc:"兌換第一個獎勵",icon:"🎁"},
+  {id:"tasks_all",name:"全勤超人",desc:"一天完成所有任務",icon:"🏆"},
+  {id:"points_500",name:"積分王",desc:"累積500點數",icon:"⭐"},
+];
+const CAT_COLORS={"衛生":"#06b6d4","整潔":"#10b981","學習":"#6366f1","家務":"#f59e0b","作息":"#8b5cf6","運動":"#ec4899"};
+const AVATARS=["🦸","🧒","👦","👧","🐯","🦊","🐻","🐼","🦁","🐸","🐨","🐺","🦄","🐲","🤖","👑","🧙","🦅","🐬","🌟"];
+const THEME_COLORS=["#6366f1","#10b981","#f59e0b","#ec4899","#06b6d4","#8b5cf6","#f97316","#14b8a6"];
+const RANK_META=[
+  {medal:"🥇",bg:"linear-gradient(135deg,#fbbf24,#f59e0b)",border:"#fbbf24",label:"第一名"},
+  {medal:"🥈",bg:"linear-gradient(135deg,#94a3b8,#64748b)",border:"#94a3b8",label:"第二名"},
+  {medal:"🥉",bg:"linear-gradient(135deg,#d97706,#b45309)",border:"#d97706",label:"第三名"},
+];
+
+function makeDefaultTasks(){return[
+  {id:uid(),name:"早上刷牙",icon:"🦷",points:10,xp:15,coins:5,dueTime:"08:00",daily:true,needConfirm:false,completed:false,category:"衛生"},
+  {id:uid(),name:"晚上刷牙",icon:"🦷",points:10,xp:15,coins:5,dueTime:"21:00",daily:true,needConfirm:false,completed:false,category:"衛生"},
+  {id:uid(),name:"摺棉被",icon:"🛏️",points:15,xp:20,coins:8,dueTime:"09:00",daily:true,needConfirm:true,completed:false,category:"整潔"},
+  {id:uid(),name:"寫功課",icon:"📚",points:25,xp:35,coins:12,dueTime:"18:00",daily:true,needConfirm:true,completed:false,category:"學習"},
+  {id:uid(),name:"閱讀30分鐘",icon:"📖",points:20,xp:30,coins:10,dueTime:"20:00",daily:true,needConfirm:false,completed:false,category:"學習"},
+  {id:uid(),name:"早睡(21:30前)",icon:"😴",points:15,xp:20,coins:8,dueTime:"21:30",daily:true,needConfirm:false,completed:false,category:"作息"},
+];}
+function makeDefaultRewards(){return[
+  {id:uid(),name:"看電視30分鐘",icon:"📺",cost:50},
+  {id:uid(),name:"玩Switch 1小時",icon:"🎮",cost:80},
+  {id:uid(),name:"吃冰淇淋",icon:"🍦",cost:60},
+  {id:uid(),name:"出去玩半天",icon:"🎡",cost:200},
+  {id:uid(),name:"買玩具",icon:"🧸",cost:500},
+  {id:uid(),name:"晚睡1小時",icon:"🌙",cost:100},
+];}
+
+// ─────────────────────────────────
+// STATE
+// ─────────────────────────────────
+let STATE={
+  mode:"child",
+  view:"switcher",
+  lbTab:"points",   // leaderboard tab: points | xp | coins | streak | tasks
+  activeChildId:"c1",
+  pin:"1234",
+  children:[
+    {id:"c1",name:"小明",avatar:"🦸",color:"#6366f1",xp:280,points:145,coins:88,streak:4,totalDays:12,achievements:["first_task","streak_3"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
+    {id:"c2",name:"小花",avatar:"👧",color:"#ec4899",xp:520,points:210,coins:130,streak:7,totalDays:18,achievements:["first_task","streak_3","streak_7","coins_100"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
+    {id:"c3",name:"小虎",avatar:"🐯",color:"#f59e0b",xp:95,points:55,coins:30,streak:2,totalDays:5,achievements:["first_task"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
+  ]
+};
+
+// ─────────────────────────────────
+// UTILS
+// ─────────────────────────────────
+function uid(){return "_"+Date.now().toString(36)+Math.random().toString(36).slice(2)}
+function getLevelInfo(xp){
+  let cur=LEVELS[0],nxt=LEVELS[1];
+  for(let i=LEVELS.length-1;i>=0;i--){if(xp>=LEVELS[i].minXP){cur=LEVELS[i];nxt=LEVELS[i+1]||null;break}}
+  const prog=nxt?Math.round(((xp-cur.minXP)/(nxt.minXP-cur.minXP))*100):100;
+  return{current:cur,next:nxt,progress:prog};
+}
+function child(){return STATE.children.find(c=>c.id===STATE.activeChildId)||STATE.children[0]}
+
+function showToast(msg,color="#10b981"){
+  const el=document.createElement("div");
+  el.style.cssText=`background:${color};color:#fff;border-radius:14px;padding:12px 18px;font-weight:800;font-size:0.88rem;text-align:center;animation:toastIn 0.3s ease;box-shadow:0 4px 20px ${color}80;margin-bottom:8px`;
+  el.textContent=msg;
+  document.getElementById("toast-container").appendChild(el);
+  setTimeout(()=>el.remove(),2600);
+}
+function fireParticles(){
+  const emojis=["⭐","✨","💫","🌟","⚡","💥","🎉"];
+  const cont=document.getElementById("particles");
+  for(let i=0;i<20;i++){
+    const p=document.createElement("div");
+    p.style.cssText=`position:absolute;left:${Math.random()*100}%;top:${30+Math.random()*40}%;font-size:${1.5+Math.random()}rem;animation:particleFly ${0.8+Math.random()*0.8}s ease-out forwards;animation-delay:${Math.random()*0.4}s`;
+    p.textContent=emojis[Math.floor(Math.random()*emojis.length)];
+    cont.appendChild(p);setTimeout(()=>p.remove(),1600);
+  }
+}
+
+// ─────────────────────────────────
+// MODAL SYSTEM
+// ─────────────────────────────────
+let modalStack=[];
+function openModal(html,onOpen){
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:1000;display:flex;align-items:flex-end;justify-content:center";
+  const box=document.createElement("div");
+  box.style.cssText="background:#0f172a;border-radius:20px 20px 0 0;padding:24px;width:100%;max-width:480px;max-height:88vh;overflow-y:auto;border:2px solid #1e293b;animation:slideUp 0.3s cubic-bezier(.34,1.56,.64,1)";
+  box.innerHTML=html;
+  overlay.appendChild(box);
+  overlay.addEventListener("click",e=>{if(e.target===overlay)closeModal()});
+  document.body.appendChild(overlay);
+  modalStack.push(overlay);
+  if(onOpen)onOpen(box);
+}
+function closeModal(){const m=modalStack.pop();if(m)m.remove()}
+function mHead(title){return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:1.1rem;font-weight:900">${title}</h2><button onclick="closeModal()" style="background:none;border:none;color:#64748b;font-size:1.5rem;cursor:pointer;line-height:1">✕</button></div>`}
+
+// ─────────────────────────────────
+// RENDER
+// ─────────────────────────────────
+function render(){
+  const isParent=STATE.mode==="parent";
+  const showNav=STATE.view!=="switcher";
+  const app=document.getElementById("app");
+  app.innerHTML=`${renderHeader(isParent)}<div id="vc" class="fade-in" style="padding:12px 0 8px"></div>${showNav?renderNav():""}`;
+  const vc=document.getElementById("vc");
+  const c=child();const li=getLevelInfo(c.xp);
+  if(STATE.view==="switcher")             vc.innerHTML=renderSwitcher();
+  else if(STATE.view==="home")            vc.innerHTML=renderHome(c,li);
+  else if(STATE.view==="tasks")           vc.innerHTML=renderTasks(c,isParent);
+  else if(STATE.view==="rewards")         vc.innerHTML=renderRewards(c,isParent);
+  else if(STATE.view==="achievements")    vc.innerHTML=renderAchievements(c,li);
+  else if(STATE.view==="leaderboard")     vc.innerHTML=renderLeaderboard();
+  else if(STATE.view==="parent")          vc.innerHTML=renderParent();
+  else if(STATE.view==="children-mgr")    vc.innerHTML=renderChildrenMgr();
+  bindEvents();
+}
+
+// ─────────────────────────────────
+// HEADER
+// ─────────────────────────────────
+function renderHeader(isParent){
+  const c=child();
+  const showBack=STATE.view!=="switcher"&&STATE.mode==="child";
+  return`<div style="background:linear-gradient(180deg,#0a0f1e,#0f172a);padding:13px 16px 11px;position:sticky;top:0;z-index:100;border-bottom:1px solid #1e293b">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        ${showBack?`<button id="btn-back" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:10px;padding:5px 10px;cursor:pointer;font-size:0.78rem;white-space:nowrap">← 切換</button>`:""}
+        <div>
+          <div style="font-size:1.18rem;font-weight:900">⚡ <span style="background:linear-gradient(90deg,#6366f1,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">超人養成系統</span></div>
+          <div style="font-size:0.6rem;color:#475569">${STATE.view!=="switcher"?`目前：${c.avatar} ${c.name}`:"Hero Kids System"}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${isParent?`<span style="background:#6366f130;color:#818cf8;border-radius:99px;padding:2px 10px;font-size:0.65rem;font-weight:700;border:1px solid #6366f140">家長模式</span>`:""}
+        <button id="btn-mode" style="background:${isParent?"#ef444420":"#6366f120"};border:1px solid ${isParent?"#ef444450":"#6366f150"};color:${isParent?"#ef4444":"#818cf8"};border-radius:10px;padding:6px 12px;cursor:pointer;font-weight:700;font-size:0.72rem">${isParent?"👶 兒童":"🔐 家長"}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// BOTTOM NAV
+// ─────────────────────────────────
+function renderNav(){
+  const items=STATE.mode==="child"
+    ?[{id:"home",icon:"🏠",label:"首頁"},{id:"tasks",icon:"📋",label:"任務"},{id:"rewards",icon:"🏆",label:"獎勵"},{id:"leaderboard",icon:"🏅",label:"排行榜"},{id:"achievements",icon:"🌟",label:"成就"}]
+    :[{id:"parent",icon:"⚙️",label:"管理"},{id:"children-mgr",icon:"👨‍👩‍👧",label:"孩子帳戶"},{id:"leaderboard",icon:"🏅",label:"排行榜"},{id:"home",icon:"👁️",label:"預覽"}];
+  return`<div style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:480px;background:rgba(10,15,30,0.97);backdrop-filter:blur(20px);border-top:1px solid #1e293b;display:flex;padding:8px 2px 18px;z-index:200">
+    ${items.map(it=>`<button class="nav-btn" data-view="${it.id}" style="flex:1;background:none;border:none;cursor:pointer;padding:6px 2px;border-radius:10px;display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="font-size:1.25rem;transition:transform 0.2s;${STATE.view===it.id?"transform:scale(1.25);filter:drop-shadow(0 0 6px #6366f1)":""}">${it.icon}</div>
+      <div style="font-size:0.54rem;font-weight:700;color:${STATE.view===it.id?"#818cf8":"#475569"}">${it.label}</div>
+      ${STATE.view===it.id?`<div style="width:4px;height:4px;border-radius:50%;background:#6366f1"></div>`:`<div style="height:4px"></div>`}
+    </button>`).join("")}
+  </div>`;
+}
+
+// ─────────────────────────────────
+// SWITCHER
+// ─────────────────────────────────
+function renderSwitcher(){
+  const totalPending=STATE.children.reduce((s,c)=>(s+(c.pendingConfirm||[]).length),0);
+  return`<div style="padding:20px 16px">
+    <div style="text-align:center;margin-bottom:26px">
+      <div style="font-size:3rem;margin-bottom:8px">⚡</div>
+      <div style="font-size:1.4rem;font-weight:900;background:linear-gradient(90deg,#6366f1,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">選擇你的超人！</div>
+      <div style="color:#475569;font-size:0.8rem;margin-top:4px">點選頭像開始今天的任務</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:22px">
+      ${STATE.children.map(c=>{
+        const li=getLevelInfo(c.xp);
+        const done=c.tasks.filter(t=>t.completed).length,total=c.tasks.length,pct=total>0?Math.round((done/total)*100):0,pend=(c.pendingConfirm||[]).length;
+        return`<button class="child-pick" data-id="${c.id}" style="background:linear-gradient(135deg,${c.color}18,#1e293b);border:2px solid ${c.color}60;border-radius:20px;padding:16px 18px;cursor:pointer;text-align:left;width:100%;transition:all 0.2s">
+          <div style="display:flex;align-items:center;gap:14px">
+            <div style="width:62px;height:62px;border-radius:50%;font-size:2.2rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:3px solid ${c.color};box-shadow:0 0 16px ${c.color}50;flex-shrink:0" class="glow-anim">${c.avatar}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="font-size:1.05rem;font-weight:900;color:#f1f5f9">${c.name}</span>
+                <span style="background:${c.color}30;color:${c.color};border-radius:99px;padding:1px 8px;font-size:0.64rem;font-weight:700;border:1px solid ${c.color}50">Lv.${li.current.level}</span>
+                ${pend>0?`<span style="background:#f59e0b30;color:#f59e0b;border-radius:99px;padding:1px 7px;font-size:0.62rem;font-weight:700;border:1px solid #f59e0b50">⏳${pend}</span>`:""}
+              </div>
+              <div style="color:${c.color};font-size:0.72rem;font-weight:700;margin-bottom:5px">${li.current.badge} ${li.current.name}</div>
+              <div style="display:flex;gap:10px;margin-bottom:7px">
+                <span style="font-size:0.68rem;color:#fbbf24">⭐${c.points}</span>
+                <span style="font-size:0.68rem;color:#fcd34d">💰${c.coins}</span>
+                <span style="font-size:0.68rem;color:#f97316">🔥${c.streak}天</span>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:0.62rem;color:#64748b;margin-bottom:3px"><span>今日任務</span><span>${done}/${total}</span></div>
+                <div style="background:#0f172a;border-radius:99px;height:7px;overflow:hidden;border:1px solid #334155">
+                  <div style="height:100%;width:${pct}%;background:${pct===100?"linear-gradient(90deg,#10b981,#34d399)":"linear-gradient(90deg,"+c.color+","+c.color+"80)"};border-radius:99px"></div>
+                </div>
+              </div>
+            </div>
+            <div style="color:${c.color};font-size:1.8rem;flex-shrink:0">›</div>
+          </div>
+        </button>`;
+      }).join("")}
+    </div>
+    <div style="background:#1e293b;border-radius:16px;padding:14px 16px;margin-bottom:14px;border:1px solid #334155">
+      <div style="font-size:0.68rem;color:#64748b;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">👨‍👩‍👧 家庭總覽</div>
+      <div style="display:flex;gap:8px">
+        <div style="flex:1;text-align:center"><div style="font-size:1.2rem;font-weight:900;color:#6366f1">${STATE.children.length}</div><div style="font-size:0.58rem;color:#64748b">小超人</div></div>
+        <div style="flex:1;text-align:center"><div style="font-size:1.2rem;font-weight:900;color:#10b981">${STATE.children.reduce((s,c)=>s+c.tasks.filter(t=>t.completed).length,0)}</div><div style="font-size:0.58rem;color:#64748b">今日完成</div></div>
+        <div style="flex:1;text-align:center"><div style="font-size:1.2rem;font-weight:900;color:#f97316">${STATE.children.reduce((s,c)=>s+c.streak,0)}</div><div style="font-size:0.58rem;color:#64748b">總連勝</div></div>
+        ${totalPending>0?`<div style="flex:1;text-align:center"><div style="font-size:1.2rem;font-weight:900;color:#f59e0b">${totalPending}</div><div style="font-size:0.58rem;color:#64748b">待確認</div></div>`:""}
+      </div>
+    </div>
+    <button id="btn-enter-parent" style="width:100%;background:#1e293b;border:1px dashed #334155;border-radius:14px;padding:14px;cursor:pointer;color:#64748b;font-size:0.85rem;font-weight:700">🔐 家長管理後台</button>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// LEADERBOARD ← 新功能
+// ─────────────────────────────────
+function renderLeaderboard(){
+  const tabs=[
+    {id:"points",label:"⭐ 積分",key:"points",unit:"點",color:"#fbbf24"},
+    {id:"xp",label:"⚡ 經驗",key:"xp",unit:"XP",color:"#818cf8"},
+    {id:"coins",label:"💰 金幣",key:"coins",unit:"枚",color:"#fcd34d"},
+    {id:"streak",label:"🔥 連勝",key:"streak",unit:"天",color:"#f97316"},
+    {id:"tasks",label:"📋 任務",key:"_tasks",unit:"個",color:"#10b981"},
+  ];
+  const cur=tabs.find(t=>t.id===STATE.lbTab)||tabs[0];
+
+  // Build sorted list
+  const ranked=[...STATE.children].map(c=>({
+    ...c,
+    _tasks:c.tasks.filter(t=>t.completed).length,
+  })).sort((a,b)=>b[cur.key]-a[cur.key]);
+
+  const maxVal=ranked[0]?ranked[0][cur.key]||1:1;
+
+  // Top 3 podium (only if 3+ children)
+  const hasPodium=ranked.length>=2;
+  const first=ranked[0],second=ranked[1]||null,third=ranked[2]||null;
+
+  // Determine if we're in an active child context
+  const myRank=ranked.findIndex(c=>c.id===STATE.activeChildId)+1;
+  const myEntry=ranked.find(c=>c.id===STATE.activeChildId);
+
+  return`<div style="padding:0 14px 20px">
+
+    <!-- Title -->
+    <div style="text-align:center;margin-bottom:18px">
+      <div style="font-size:1.8rem;margin-bottom:4px" class="float-anim">🏆</div>
+      <div style="font-size:1.2rem;font-weight:900;background:linear-gradient(90deg,#fbbf24,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent">家庭超人排行榜</div>
+      <div style="color:#475569;font-size:0.75rem;margin-top:3px">看看今天誰是最強超人！</div>
+    </div>
+
+    <!-- Tab selector -->
+    <div style="display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px">
+      ${tabs.map(t=>`<button class="lb-tab" data-tab="${t.id}" style="flex-shrink:0;padding:7px 12px;border-radius:20px;border:1px solid ${STATE.lbTab===t.id?t.color:"#334155"};background:${STATE.lbTab===t.id?t.color+"25":"transparent"};color:${STATE.lbTab===t.id?t.color:"#64748b"};font-weight:700;font-size:0.72rem;cursor:pointer;transition:all 0.2s;white-space:nowrap">${t.label}</button>`).join("")}
+    </div>
+
+    <!-- Podium (top 3) -->
+    ${hasPodium?`<div style="background:linear-gradient(135deg,#1a1040,#1e293b);border-radius:24px;padding:20px 16px 24px;margin-bottom:18px;border:1px solid #334155;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-20px;font-size:8rem;opacity:0.04;user-select:none">🏆</div>
+      <div style="text-align:center;font-size:0.7rem;color:#64748b;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px">${cur.label} 排行</div>
+
+      <!-- Podium visual -->
+      <div style="display:flex;align-items:flex-end;justify-content:center;gap:10px;margin-bottom:6px">
+
+        <!-- 2nd place -->
+        ${second?`<div style="display:flex;flex-direction:column;align-items:center;flex:1">
+          <div style="font-size:1.6rem;margin-bottom:4px;opacity:0.9">${second.avatar}</div>
+          <div style="font-size:0.72rem;font-weight:800;color:#94a3b8;margin-bottom:4px;text-align:center">${second.name}</div>
+          <div style="font-size:0.9rem;font-weight:900;color:#94a3b8;margin-bottom:6px">${second[cur.key].toLocaleString()}<span style="font-size:0.6rem">${cur.unit}</span></div>
+          <div style="background:linear-gradient(180deg,#94a3b8,#64748b);border-radius:12px 12px 0 0;width:100%;height:60px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;box-shadow:0 0 14px #94a3b850">🥈</div>
+        </div>`:`<div style="flex:1"></div>`}
+
+        <!-- 1st place -->
+        <div style="display:flex;flex-direction:column;align-items:center;flex:1.2">
+          <div style="font-size:1.1rem;margin-bottom:2px" class="float-anim">👑</div>
+          <div style="font-size:2rem;margin-bottom:4px;filter:drop-shadow(0 0 10px ${first.color})">${first.avatar}</div>
+          <div style="font-size:0.78rem;font-weight:900;color:${first.color};margin-bottom:4px;text-align:center">${first.name}</div>
+          <div style="font-size:1.1rem;font-weight:900;color:#fbbf24;margin-bottom:6px">${first[cur.key].toLocaleString()}<span style="font-size:0.62rem">${cur.unit}</span></div>
+          <div style="background:linear-gradient(180deg,#fbbf24,#f59e0b);border-radius:12px 12px 0 0;width:100%;height:84px;display:flex;align-items:center;justify-content:center;font-size:2rem;box-shadow:0 0 20px #fbbf2460">🥇</div>
+        </div>
+
+        <!-- 3rd place -->
+        ${third?`<div style="display:flex;flex-direction:column;align-items:center;flex:1">
+          <div style="font-size:1.6rem;margin-bottom:4px;opacity:0.9">${third.avatar}</div>
+          <div style="font-size:0.72rem;font-weight:800;color:#d97706;margin-bottom:4px;text-align:center">${third.name}</div>
+          <div style="font-size:0.9rem;font-weight:900;color:#d97706;margin-bottom:6px">${third[cur.key].toLocaleString()}<span style="font-size:0.6rem">${cur.unit}</span></div>
+          <div style="background:linear-gradient(180deg,#d97706,#b45309);border-radius:12px 12px 0 0;width:100%;height:44px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;box-shadow:0 0 14px #d9770650">🥉</div>
+        </div>`:`<div style="flex:1"></div>`}
+      </div>
+      <!-- stage base -->
+      <div style="background:#0f172a;border-radius:0 0 8px 8px;height:8px;margin:-2px 0 0"></div>
+    </div>`:""}
+
+    <!-- Full ranking list -->
+    <div style="margin-bottom:16px">
+      <div style="font-size:0.68rem;color:#64748b;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">完整排名</div>
+      ${ranked.map((c,i)=>{
+        const pct=maxVal>0?Math.round((c[cur.key]/maxVal)*100):0;
+        const isMe=c.id===STATE.activeChildId;
+        const li=getLevelInfo(c.xp);
+        let rankIcon=`<span style="font-size:1rem;font-weight:900;color:#475569;min-width:20px;text-align:center">${i+1}</span>`;
+        if(i===0)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥇</span>`;
+        else if(i===1)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥈</span>`;
+        else if(i===2)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥉</span>`;
+        return`<div style="background:${isMe?"linear-gradient(135deg,"+c.color+"20,#1e293b)":"#1e293b"};border:2px solid ${isMe?c.color+"80":"#334155"};border-radius:16px;padding:13px 14px;margin-bottom:9px;transition:all 0.3s">
+          <div style="display:flex;align-items:center;gap:11px;margin-bottom:9px">
+            ${rankIcon}
+            <div style="width:40px;height:40px;border-radius:50%;font-size:1.5rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:2px solid ${c.color};box-shadow:0 0 10px ${c.color}40;flex-shrink:0">${c.avatar}</div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                <span style="font-weight:900;font-size:0.92rem">${c.name}</span>
+                ${isMe?`<span style="background:#6366f130;color:#818cf8;border-radius:99px;padding:1px 7px;font-size:0.6rem;font-weight:700">我</span>`:""}
+                <span style="background:${c.color}25;color:${c.color};border-radius:99px;padding:1px 6px;font-size:0.6rem;font-weight:700">${li.current.badge}Lv${li.current.level}</span>
+              </div>
+              <div style="color:#64748b;font-size:0.66rem;margin-top:2px">${li.current.name}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:1.1rem;font-weight:900;color:${cur.color}">${c[cur.key].toLocaleString()}</div>
+              <div style="font-size:0.6rem;color:#64748b">${cur.unit}</div>
+            </div>
+          </div>
+          <!-- Progress bar -->
+          <div style="background:#0f172a;border-radius:99px;height:8px;overflow:hidden;border:1px solid #334155">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${cur.color},${cur.color}80);border-radius:99px;transition:width 0.8s;box-shadow:0 0 6px ${cur.color}60"></div>
+          </div>
+          <!-- Mini stats row -->
+          <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+            <span style="font-size:0.64rem;color:#fbbf24">⭐${c.points}點</span>
+            <span style="font-size:0.64rem;color:#818cf8">⚡${c.xp}XP</span>
+            <span style="font-size:0.64rem;color:#fcd34d">💰${c.coins}幣</span>
+            <span style="font-size:0.64rem;color:#f97316">🔥${c.streak}天</span>
+            <span style="font-size:0.64rem;color:#10b981">📋${c.tasks.filter(t=>t.completed).length}/${c.tasks.length}任務</span>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <!-- My rank banner (child mode) -->
+    ${myEntry&&STATE.mode==="child"?`<div style="background:linear-gradient(135deg,${myEntry.color}25,#1e293b);border:2px solid ${myEntry.color}60;border-radius:18px;padding:14px 16px;text-align:center">
+      <div style="font-size:0.72rem;color:#64748b;font-weight:700;margin-bottom:6px">🌟 ${myEntry.name} 的排名</div>
+      <div style="font-size:2rem;font-weight:900;color:${myEntry.color};margin-bottom:4px">第 ${myRank} 名</div>
+      <div style="font-size:0.78rem;color:#94a3b8">${cur.label}：<strong style="color:${cur.color}">${myEntry[cur.key].toLocaleString()} ${cur.unit}</strong></div>
+      ${myRank>1?`<div style="font-size:0.72rem;color:#64748b;margin-top:6px">距第${myRank-1}名還差 <strong style="color:#fbbf24">${(ranked[myRank-2][cur.key]-myEntry[cur.key]).toLocaleString()} ${cur.unit}</strong> 加油！💪</div>`:`<div style="font-size:0.72rem;color:#10b981;margin-top:6px" class="pulse-anim">🎉 目前第一名！繼續保持！</div>`}
+    </div>`:""}
+  </div>`;
+}
+
+// ─────────────────────────────────
+// HELPERS
+// ─────────────────────────────────
+function xpBar(xp,color){
+  const{current:cur,next,progress}=getLevelInfo(xp);
+  const col=color||cur.color;
+  return`<div style="margin:7px 0">
+    <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#94a3b8;margin-bottom:3px">
+      <span>${cur.badge} ${cur.name}</span>${next?`<span>→ ${next.name}</span>`:"<span>🏆 滿級</span>"}
+    </div>
+    <div style="background:#1e293b;border-radius:99px;height:12px;overflow:hidden;border:2px solid #334155">
+      <div style="height:100%;width:${progress}%;background:linear-gradient(90deg,${col},#fff);border-radius:99px;transition:width 0.8s;box-shadow:0 0 8px ${col}"></div>
+    </div>
+    <div style="font-size:0.6rem;color:#64748b;margin-top:2px;text-align:right">${xp} XP${next?" / "+next.minXP+" XP":""}</div>
+  </div>`;
+}
+function statBadge(icon,val,label,color){
+  return`<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:8px 6px;text-align:center;border:1px solid ${color}40;flex:1">
+    <div style="font-size:1.25rem">${icon}</div>
+    <div style="font-size:1rem;font-weight:900;color:${color}">${val}</div>
+    <div style="font-size:0.56rem;color:#64748b">${label}</div>
+  </div>`;
+}
+function taskCard(t,isParent){
+  const cc=CAT_COLORS[t.category]||"#64748b";
+  const c=child();
+  const isPend=(c.pendingConfirm||[]).includes(t.id);
+  return`<div style="background:${t.completed?"rgba(16,185,129,0.1)":"rgba(255,255,255,0.04)"};border:2px solid ${t.completed?"#10b981":isPend?"#f59e0b":cc+"60"};border-radius:16px;padding:12px 14px;margin-bottom:9px;display:flex;align-items:center;gap:11px;opacity:${t.completed?0.72:1}">
+    <div style="font-size:1.85rem;min-width:36px;text-align:center">${t.icon}</div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+        <span style="font-weight:800;color:${t.completed?"#10b981":"#f1f5f9"};font-size:0.88rem">${t.completed?"✅ ":""}${isPend?"⏳ ":""}${t.name}</span>
+        <span style="font-size:0.55rem;background:${cc}30;color:${cc};border-radius:99px;padding:1px 6px">${t.category}</span>
+        ${t.needConfirm?`<span style="font-size:0.55rem;background:#f59e0b30;color:#f59e0b;border-radius:99px;padding:1px 6px">需確認</span>`:""}
+      </div>
+      <div style="display:flex;gap:7px;margin-top:4px;flex-wrap:wrap">
+        <span style="font-size:0.65rem;color:#fbbf24">+${t.points}點</span>
+        <span style="font-size:0.65rem;color:#818cf8">+${t.xp}XP</span>
+        <span style="font-size:0.65rem;color:#fcd34d">+${t.coins}💰</span>
+        <span style="font-size:0.65rem;color:#64748b">⏰${t.dueTime}</span>
+      </div>
+    </div>
+    ${!isParent&&!t.completed&&!isPend?`<button class="complete-btn" data-id="${t.id}" style="width:42px;height:42px;border-radius:50%;border:none;background:linear-gradient(135deg,${cc},${cc}90);color:#fff;font-size:1.1rem;cursor:pointer;box-shadow:0 0 12px ${cc}80;flex-shrink:0">⚡</button>`:""}
+    ${isPend?`<div style="font-size:1.3rem;flex-shrink:0">⏳</div>`:""}
+    ${t.completed?`<div style="font-size:1.3rem;flex-shrink:0">✅</div>`:""}
+  </div>`;
+}
+function rewardCard(r,coins,isParent){
+  const can=coins>=r.cost;
+  return`<div style="background:rgba(255,255,255,0.04);border:2px solid ${can?"#fcd34d60":"#334155"};border-radius:16px;padding:14px;text-align:center;opacity:${can||isParent?1:0.5}">
+    <div style="font-size:2.4rem;margin-bottom:5px">${r.icon}</div>
+    <div style="font-weight:800;color:#f1f5f9;font-size:0.8rem;margin-bottom:4px">${r.name}</div>
+    <div style="color:#fcd34d;font-weight:700;margin-bottom:10px;font-size:0.84rem">💰 ${r.cost}</div>
+    ${!isParent?`<button class="redeem-btn" data-id="${r.id}" ${can?"":"disabled"} style="width:100%;padding:8px;border-radius:10px;border:none;background:${can?"linear-gradient(135deg,#fcd34d,#f59e0b)":"#334155"};color:${can?"#1a1a2e":"#64748b"};font-weight:800;font-size:0.75rem;cursor:${can?"pointer":"not-allowed"}">${can?"✨ 兌換！":"不夠💰"}</button>`:""}
+  </div>`;
+}
+
+// ─────────────────────────────────
+// HOME
+// ─────────────────────────────────
+function renderHome(c,li){
+  const done=c.tasks.filter(t=>t.completed).length,total=c.tasks.length,pct=total>0?Math.round((done/total)*100):0;
+  // My rank
+  const myRankPoints=[...STATE.children].sort((a,b)=>b.points-a.points).findIndex(x=>x.id===c.id)+1;
+  return`<div style="padding:0 14px 16px">
+    <div style="background:linear-gradient(135deg,#1e1b4b,#312e81,#1e1b4b);border-radius:24px;padding:18px;margin-bottom:14px;border:2px solid ${c.color}40;position:relative;overflow:hidden">
+      <div style="position:absolute;top:-20px;right:-12px;font-size:5.5rem;opacity:0.07;transform:rotate(-15deg);user-select:none">⚡</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="width:66px;height:66px;border-radius:50%;font-size:2.3rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:3px solid ${c.color};box-shadow:0 0 20px ${c.color}60;flex-shrink:0" class="glow-anim">${c.avatar}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-size:1rem;font-weight:900">${c.name}</span>
+            <span style="background:${c.color}30;color:${c.color};border-radius:99px;padding:1px 8px;font-size:0.65rem;font-weight:700;border:1px solid ${c.color}50">Lv.${li.current.level}</span>
+            <span style="background:#fbbf2430;color:#fbbf24;border-radius:99px;padding:1px 7px;font-size:0.62rem;font-weight:700;border:1px solid #fbbf2450">🏅 積分第${myRankPoints}名</span>
+          </div>
+          <div style="color:${c.color};font-weight:700;font-size:0.75rem;margin-bottom:4px">${li.current.badge} ${li.current.name}</div>
+          ${xpBar(c.xp,c.color)}
+        </div>
+      </div>
+      <div style="display:flex;gap:7px;margin-top:14px">
+        ${statBadge("⭐",c.points,"點數","#fbbf24")}${statBadge("💰",c.coins,"金幣","#fcd34d")}${statBadge("🔥",c.streak,"連勝天","#f97316")}${statBadge("📅",c.totalDays,"總天數","#06b6d4")}
+      </div>
+    </div>
+    <div style="background:#1e293b;border-radius:20px;padding:14px 16px;margin-bottom:14px;border:1px solid #334155">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:800;font-size:0.92rem">⚡ 今日任務進度</span>
+        <span style="color:${pct===100?"#10b981":"#6366f1"};font-weight:700">${done} / ${total}</span>
+      </div>
+      <div style="background:#0f172a;border-radius:99px;height:16px;overflow:hidden;border:1px solid #334155">
+        <div style="height:100%;width:${pct}%;background:${pct===100?"linear-gradient(90deg,#10b981,#34d399)":"linear-gradient(90deg,#6366f1,#818cf8)"};border-radius:99px;transition:width 0.8s;box-shadow:0 0 10px ${pct===100?"#10b981":"#6366f1"}80"></div>
+      </div>
+      ${pct===100?`<div style="text-align:center;color:#10b981;font-weight:800;margin-top:10px;font-size:0.88rem" class="pulse-anim">🎉 全部完成！${c.name} 超棒的！</div>`:`<div style="color:#64748b;font-size:0.7rem;margin-top:6px;text-align:right">還差 ${total-done} 個加油！</div>`}
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:800">📋 今日任務</span>
+        <button class="nav-btn" data-view="tasks" style="background:none;border:none;color:#6366f1;font-weight:700;cursor:pointer;font-size:0.78rem">全部 →</button>
+      </div>
+      ${c.tasks.slice(0,4).map(t=>taskCard(t,false)).join("")}
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:800">🏆 快速兌換</span>
+        <button class="nav-btn" data-view="rewards" style="background:none;border:none;color:#f59e0b;font-weight:700;cursor:pointer;font-size:0.78rem">全部 →</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${c.rewards.slice(0,4).map(r=>rewardCard(r,c.coins,false)).join("")}</div>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// TASKS
+// ─────────────────────────────────
+function renderTasks(c,isParent){
+  const cats=[...new Set(c.tasks.map(t=>t.category))];
+  return`<div style="padding:0 14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h2 style="font-size:1.05rem;font-weight:900">📋 任務清單</h2>
+      ${isParent?`<button id="btn-add-task" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:#fff;border-radius:12px;padding:8px 14px;cursor:pointer;font-weight:800;font-size:0.75rem">＋ 新增</button>`:""}
+    </div>
+    ${cats.map(cat=>`<div style="margin-bottom:18px">
+      <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">${cat}</div>
+      ${c.tasks.filter(t=>t.category===cat).map(t=>`<div style="position:relative">${taskCard(t,isParent)}${isParent?`<button class="del-task" data-id="${t.id}" style="position:absolute;top:8px;right:8px;background:#ef444430;border:1px solid #ef444460;color:#ef4444;border-radius:8px;padding:2px 8px;font-size:0.62rem;cursor:pointer">刪除</button>`:""}</div>`).join("")}
+    </div>`).join("")}
+    ${c.tasks.length===0?`<div style="text-align:center;padding:40px;color:#475569;font-size:0.9rem">還沒有任務 📭</div>`:""}
+  </div>`;
+}
+
+// ─────────────────────────────────
+// REWARDS
+// ─────────────────────────────────
+function renderRewards(c,isParent){
+  return`<div style="padding:0 14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="font-size:1.05rem;font-weight:900">🏆 獎勵商店</h2>
+      ${isParent?`<button id="btn-add-reward" style="background:linear-gradient(135deg,#f59e0b,#fcd34d);border:none;color:#1a1a2e;border-radius:12px;padding:8px 14px;cursor:pointer;font-weight:800;font-size:0.75rem">＋ 新增</button>`:""}
+    </div>
+    <div style="background:#1e293b;border-radius:16px;padding:11px 16px;margin-bottom:14px;border:1px solid #fcd34d40">
+      <span style="color:#fcd34d;font-weight:700">💰 目前金幣：${c.coins} 枚</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${c.rewards.map(r=>`<div style="position:relative">${rewardCard(r,c.coins,isParent)}${isParent?`<button class="del-reward" data-id="${r.id}" style="position:absolute;top:6px;right:6px;background:#ef444430;border:1px solid #ef444450;color:#ef4444;border-radius:8px;padding:2px 6px;font-size:0.6rem;cursor:pointer">✕</button>`:""}</div>`).join("")}
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// ACHIEVEMENTS
+// ─────────────────────────────────
+function renderAchievements(c,li){
+  return`<div style="padding:0 14px 16px">
+    <h2 style="font-size:1.05rem;font-weight:900;margin-bottom:14px">🏅 成就 & 等級</h2>
+    <div style="background:linear-gradient(135deg,${li.current.color}20,transparent);border:2px solid ${li.current.color};border-radius:20px;padding:20px;text-align:center;margin-bottom:18px;box-shadow:0 0 24px ${li.current.color}40">
+      <div style="font-size:3rem;margin-bottom:8px">${li.current.badge}</div>
+      <div style="color:${li.current.color};font-weight:900;font-size:1.15rem">${li.current.name}</div>
+      <div style="color:#64748b;font-size:0.75rem;margin-top:4px">Lv.${li.current.level} · ${c.xp} XP</div>
+    </div>
+    <div style="margin-bottom:20px">
+      <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">升級路徑</div>
+      ${LEVELS.map(lv=>{
+        const reached=c.xp>=lv.minXP,isCur=li.current.level===lv.level;
+        return`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px;opacity:${reached?1:0.36}">
+          <div style="width:34px;height:34px;border-radius:50%;background:${reached?lv.color+"30":"#1e293b"};border:2px solid ${reached?lv.color:"#334155"};display:flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0">${lv.badge}</div>
+          <div style="flex:1"><div style="color:${reached?lv.color:"#64748b"};font-weight:700;font-size:0.8rem">${lv.name}</div><div style="color:#475569;font-size:0.63rem">Lv.${lv.level} · ${lv.minXP} XP</div></div>
+          ${isCur?`<span style="background:#6366f130;color:#818cf8;border-radius:99px;padding:2px 10px;font-size:0.62rem;font-weight:700">目前</span>`:""}
+        </div>`;
+      }).join("")}
+    </div>
+    <div>
+      <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">成就徽章 (${c.achievements.length}/${ACHIEVEMENTS.length})</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        ${ACHIEVEMENTS.map(ach=>{
+          const unlocked=c.achievements.includes(ach.id);
+          return`<div style="background:${unlocked?"rgba(99,102,241,0.15)":"#1e293b"};border:2px solid ${unlocked?"#6366f1":"#334155"};border-radius:14px;padding:14px;text-align:center;opacity:${unlocked?1:0.44}">
+            <div style="font-size:2rem;margin-bottom:5px;filter:${unlocked?"none":"grayscale(1)"}">${ach.icon}</div>
+            <div style="font-weight:800;color:${unlocked?"#f1f5f9":"#64748b"};font-size:0.76rem">${ach.name}</div>
+            <div style="color:#475569;font-size:0.6rem;margin-top:3px">${ach.desc}</div>
+            ${unlocked?`<div style="color:#818cf8;font-size:0.6rem;font-weight:700;margin-top:4px">✅ 已解鎖</div>`:`<div style="color:#334155;font-size:0.6rem;margin-top:4px">🔒 未解鎖</div>`}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// PARENT DASHBOARD
+// ─────────────────────────────────
+function renderParent(){
+  const c=child();const li=getLevelInfo(c.xp);const pend=c.pendingConfirm||[];
+  return`<div style="padding:0 14px 16px">
+    <div style="margin-bottom:14px">
+      <div style="font-size:0.67rem;color:#64748b;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">選擇孩子</div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">
+        ${STATE.children.map(ch=>`<button class="parent-child-btn" data-id="${ch.id}" style="flex-shrink:0;background:${ch.id===STATE.activeChildId?"linear-gradient(135deg,"+ch.color+","+ch.color+"aa)":"#1e293b"};border:2px solid ${ch.id===STATE.activeChildId?ch.color:"#334155"};border-radius:14px;padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:8px">
+          <span style="font-size:1.4rem">${ch.avatar}</span>
+          <span style="color:${ch.id===STATE.activeChildId?"#fff":"#94a3b8"};font-weight:800;font-size:0.8rem;white-space:nowrap">${ch.name}</span>
+          ${(ch.pendingConfirm||[]).length>0?`<span style="background:#f59e0b;color:#1a1a2e;border-radius:99px;padding:0 6px;font-size:0.6rem;font-weight:900">${ch.pendingConfirm.length}</span>`:""}
+        </button>`).join("")}
+      </div>
+    </div>
+    <div style="display:flex;gap:7px;margin-bottom:14px">
+      ${statBadge("⭐",c.points,"點數","#fbbf24")}${statBadge("💰",c.coins,"金幣","#fcd34d")}${statBadge("🔥",c.streak,"連勝","#f97316")}${statBadge("🏆","Lv"+li.current.level,"等級","#818cf8")}
+    </div>
+    ${pend.length>0?`<div style="background:#1e293b;border-radius:16px;padding:14px;margin-bottom:14px;border:2px solid #f59e0b60">
+      <div style="font-weight:800;color:#f59e0b;margin-bottom:10px;font-size:0.85rem">⏳ 待確認 (${pend.length})</div>
+      ${pend.map(tid=>{const t=c.tasks.find(x=>x.id==tid);if(!t)return"";return`<div style="display:flex;align-items:center;gap:8px;background:#0f172a;border-radius:10px;padding:9px 12px;margin-bottom:7px">
+        <span style="font-size:1.3rem">${t.icon}</span><span style="flex:1;font-size:0.82rem">${t.name}</span>
+        <button class="confirm-btn" data-id="${t.id}" style="background:#10b98130;border:1px solid #10b98160;color:#10b981;border-radius:8px;padding:5px 12px;font-weight:700;cursor:pointer;font-size:0.75rem">✅ 確認</button>
+        <button class="reject-btn" data-id="${t.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:8px;padding:5px 10px;font-weight:700;cursor:pointer;font-size:0.75rem">✕</button>
+      </div>`;}).join("")}
+    </div>`:""}
+    <div style="background:#1e293b;border-radius:16px;padding:14px;margin-bottom:14px;border:1px solid #334155">
+      <div style="font-weight:800;font-size:0.85rem;margin-bottom:10px">⚡ 點數調整</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${[["+10",10,true],["+20",20,true],["+50",50,true],["-10",-10,false],["-20",-20,false]].map(([l,a,p])=>`<button class="adj-btn" data-amt="${a}" style="flex:1;min-width:48px;padding:8px 4px;border-radius:10px;border:1px solid ${p?"#10b98160":"#ef444460"};background:${p?"#10b98120":"#ef444420"};color:${p?"#10b981":"#ef4444"};font-weight:700;cursor:pointer;font-size:0.74rem">${l}</button>`).join("")}
+      </div>
+      <div style="display:flex;gap:8px">
+        <input id="custom-adj" type="number" placeholder="自訂（正加/負扣）" style="flex:1">
+        <button id="do-adj" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:#fff;border-radius:10px;padding:8px 14px;cursor:pointer;font-weight:800;font-size:0.78rem;white-space:nowrap">確認</button>
+      </div>
+    </div>
+    <div style="background:#1e293b;border-radius:16px;padding:14px;margin-bottom:14px;border:1px solid #334155">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:800;font-size:0.85rem">📋 任務管理</div>
+        <button id="btn-add-task" style="background:linear-gradient(135deg,#6366f1,#818cf8);border:none;color:#fff;border-radius:10px;padding:6px 12px;cursor:pointer;font-weight:800;font-size:0.7rem">＋ 新增</button>
+      </div>
+      ${c.tasks.map(t=>`<div style="display:flex;align-items:center;gap:8px;background:#0f172a;border-radius:10px;padding:8px 11px;margin-bottom:6px">
+        <span>${t.icon}</span><span style="flex:1;font-size:0.8rem;color:${t.completed?"#10b981":"#f1f5f9"}">${t.name}</span>
+        <span style="color:#fbbf24;font-size:0.7rem">+${t.points}pt</span>
+        <button class="del-task" data-id="${t.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:6px;padding:2px 8px;font-size:0.65rem;cursor:pointer">刪</button>
+      </div>`).join("")}
+    </div>
+    <div style="background:#1e293b;border-radius:16px;padding:14px;border:1px solid #334155">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-weight:800;font-size:0.85rem">🏆 獎勵管理</div>
+        <button id="btn-add-reward" style="background:linear-gradient(135deg,#f59e0b,#fcd34d);border:none;color:#1a1a2e;border-radius:10px;padding:6px 12px;cursor:pointer;font-weight:800;font-size:0.7rem">＋ 新增</button>
+      </div>
+      ${c.rewards.map(r=>`<div style="display:flex;align-items:center;gap:8px;background:#0f172a;border-radius:10px;padding:8px 11px;margin-bottom:6px">
+        <span>${r.icon}</span><span style="flex:1;font-size:0.8rem">${r.name}</span>
+        <span style="color:#fcd34d;font-size:0.7rem">${r.cost}💰</span>
+        <button class="del-reward" data-id="${r.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:6px;padding:2px 8px;font-size:0.65rem;cursor:pointer">刪</button>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// CHILDREN MANAGER
+// ─────────────────────────────────
+function renderChildrenMgr(){
+  return`<div style="padding:0 14px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:1.05rem;font-weight:900">👨‍👩‍👧 孩子帳戶管理</h2>
+      <button id="btn-add-child" style="background:linear-gradient(135deg,#10b981,#34d399);border:none;color:#fff;border-radius:12px;padding:8px 14px;cursor:pointer;font-weight:800;font-size:0.75rem;box-shadow:0 4px 12px rgba(16,185,129,0.4)">＋ 新增孩子</button>
+    </div>
+    ${STATE.children.map(c=>{
+      const li=getLevelInfo(c.xp),done=c.tasks.filter(t=>t.completed).length;
+      return`<div style="background:#1e293b;border-radius:20px;padding:16px;margin-bottom:12px;border:2px solid ${c.color}40">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:58px;height:58px;border-radius:50%;font-size:2rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:3px solid ${c.color};box-shadow:0 0 14px ${c.color}50;flex-shrink:0">${c.avatar}</div>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">
+              <span style="font-size:1rem;font-weight:900">${c.name}</span>
+              <span style="background:${c.color}30;color:${c.color};border-radius:99px;padding:1px 7px;font-size:0.63rem;font-weight:700">Lv.${li.current.level}</span>
+            </div>
+            <div style="color:${c.color};font-size:0.7rem;font-weight:700;margin-bottom:5px">${li.current.badge} ${li.current.name}</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <span style="font-size:0.66rem;color:#fbbf24">⭐${c.points}</span>
+              <span style="font-size:0.66rem;color:#fcd34d">💰${c.coins}</span>
+              <span style="font-size:0.66rem;color:#10b981">📋${done}/${c.tasks.length}</span>
+              <span style="font-size:0.66rem;color:#f97316">🔥${c.streak}天</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:7px;flex-shrink:0">
+            <button class="edit-child-btn" data-id="${c.id}" style="background:#6366f120;border:1px solid #6366f150;color:#818cf8;border-radius:10px;padding:6px 12px;cursor:pointer;font-size:0.7rem;font-weight:700;white-space:nowrap">✏️ 編輯</button>
+            ${STATE.children.length>1?`<button class="del-child-btn" data-id="${c.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:10px;padding:6px 12px;cursor:pointer;font-size:0.7rem;font-weight:700;white-space:nowrap">🗑️ 刪除</button>`:`<div style="height:30px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:#334155">最少1位</div>`}
+          </div>
+        </div>
+      </div>`;
+    }).join("")}
+    <div style="background:#1e293b;border-radius:14px;padding:13px 16px;border:1px dashed #334155;text-align:center;color:#475569;font-size:0.78rem;margin-top:4px">
+      目前共 <strong style="color:#818cf8">${STATE.children.length}</strong> 位小超人 · 最多可新增 8 位
+    </div>
+  </div>`;
+}
+
+// ─────────────────────────────────
+// MODALS
+// ─────────────────────────────────
+function showPinModal(onSuccess){
+  openModal(`${mHead("🔐 家長驗證")}
+    <div style="text-align:center;padding:8px 0">
+      <div style="color:#64748b;font-size:0.82rem;margin-bottom:14px">請輸入家長密碼（預設：1234）</div>
+      <input id="pin-input" type="password" placeholder="••••" maxlength="6" style="text-align:center;font-size:1.6rem;letter-spacing:10px;margin-bottom:16px">
+      <button id="pin-submit" class="btn-primary">進入家長後台</button>
+    </div>`,
+  box=>{
+    box.querySelector("#pin-input").focus();
+    const doPin=()=>{
+      if(box.querySelector("#pin-input").value===STATE.pin){closeModal();if(onSuccess)onSuccess();}
+      else{showToast("❌ 密碼錯誤！預設：1234","#ef4444");box.querySelector("#pin-input").value="";}
+    };
+    box.querySelector("#pin-input").addEventListener("keydown",e=>{if(e.key==="Enter")doPin()});
+    box.querySelector("#pin-submit").addEventListener("click",doPin);
+  });
+}
+
+function showAddChildModal(){
+  if(STATE.children.length>=8){showToast("⚠️ 最多8位小超人","#f59e0b");return;}
+  let selAvatar=AVATARS[STATE.children.length%AVATARS.length];
+  let selColor=THEME_COLORS[STATE.children.length%THEME_COLORS.length];
+  openModal(`${mHead("🦸 新增小超人帳戶")}
+    <div style="display:flex;flex-direction:column;gap:13px">
+      <div><label style="color:#94a3b8;font-size:0.78rem">小超人的名字</label><input id="child-name" placeholder="例如：小明、妹妹…"></div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">選擇頭像</label>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px">
+          ${AVATARS.map(av=>`<button class="av-btn" data-av="${av}" style="width:44px;height:44px;border-radius:12px;border:2px solid ${av===selAvatar?"#6366f1":"#334155"};background:${av===selAvatar?"#6366f130":"transparent"};font-size:1.45rem;cursor:pointer">${av}</button>`).join("")}
+        </div>
+      </div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">選擇主題色</label>
+        <div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">
+          ${THEME_COLORS.map(col=>`<button class="col-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer;transition:all 0.2s"></button>`).join("")}
+        </div>
+      </div>
+      <button id="submit-child" class="btn-primary btn-green">🦸 建立帳戶</button>
+    </div>`,
+  box=>{
+    box.querySelectorAll(".av-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".av-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
+      btn.style.borderColor="#6366f1";btn.style.background="#6366f130";selAvatar=btn.dataset.av;
+    }));
+    box.querySelectorAll(".col-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".col-btn").forEach(b=>b.style.borderColor="transparent");
+      btn.style.borderColor="#fff";selColor=btn.dataset.col;
+    }));
+    box.querySelector("#submit-child").addEventListener("click",()=>{
+      const name=box.querySelector("#child-name").value.trim();
+      if(!name){showToast("⚠️ 請輸入名字","#f59e0b");return;}
+      const nc={id:uid(),name,avatar:selAvatar,color:selColor,xp:0,points:0,coins:0,streak:0,totalDays:0,achievements:[],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()};
+      STATE.children.push(nc);STATE.activeChildId=nc.id;
+      closeModal();fireParticles();showToast(`🦸 ${name} 的帳戶建立完成！`,"#10b981");render();
+    });
+  });
+}
+
+function showEditChildModal(id){
+  const c=STATE.children.find(x=>x.id===id);if(!c)return;
+  let selAvatar=c.avatar,selColor=c.color;
+  openModal(`${mHead("✏️ 編輯帳戶："+c.name)}
+    <div style="display:flex;flex-direction:column;gap:13px">
+      <div><label style="color:#94a3b8;font-size:0.78rem">名字</label><input id="edit-name" value="${c.name}"></div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">頭像</label>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px">
+          ${AVATARS.map(av=>`<button class="eav-btn" data-av="${av}" style="width:44px;height:44px;border-radius:12px;border:2px solid ${av===selAvatar?"#6366f1":"#334155"};background:${av===selAvatar?"#6366f130":"transparent"};font-size:1.45rem;cursor:pointer">${av}</button>`).join("")}
+        </div>
+      </div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">主題色</label>
+        <div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">
+          ${THEME_COLORS.map(col=>`<button class="ecol-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer;transition:all 0.2s"></button>`).join("")}
+        </div>
+      </div>
+      <button id="save-child" class="btn-primary">💾 儲存變更</button>
+    </div>`,
+  box=>{
+    box.querySelectorAll(".eav-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".eav-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
+      btn.style.borderColor="#6366f1";btn.style.background="#6366f130";selAvatar=btn.dataset.av;
+    }));
+    box.querySelectorAll(".ecol-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".ecol-btn").forEach(b=>b.style.borderColor="transparent");
+      btn.style.borderColor="#fff";selColor=btn.dataset.col;
+    }));
+    box.querySelector("#save-child").addEventListener("click",()=>{
+      const name=box.querySelector("#edit-name").value.trim();
+      if(!name){showToast("⚠️ 請輸入名字","#f59e0b");return;}
+      c.name=name;c.avatar=selAvatar;c.color=selColor;closeModal();render();showToast("💾 帳戶已更新","#6366f1");
+    });
+  });
+}
+
+function showDelChildConfirm(id){
+  const c=STATE.children.find(x=>x.id===id);if(!c)return;
+  openModal(`${mHead("🗑️ 刪除帳戶")}
+    <div style="text-align:center;padding:8px 0">
+      <div style="font-size:3.5rem;margin-bottom:12px">${c.avatar}</div>
+      <div style="font-size:1rem;font-weight:800;margin-bottom:10px">確定刪除「${c.name}」的帳戶？</div>
+      <div style="color:#ef4444;font-size:0.8rem;margin-bottom:22px;background:#ef444420;border-radius:12px;padding:12px;line-height:1.6">⚠️ 刪除後所有資料將永久消失，無法復原！</div>
+      <div style="display:flex;gap:10px">
+        <button onclick="closeModal()" style="flex:1;padding:12px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#94a3b8;font-weight:700;cursor:pointer">取消</button>
+        <button id="confirm-del" class="btn-primary btn-red" style="flex:1">確定刪除</button>
+      </div>
+    </div>`,
+  box=>{
+    box.querySelector("#confirm-del").addEventListener("click",()=>{
+      const name=c.name;STATE.children=STATE.children.filter(x=>x.id!==id);
+      if(STATE.activeChildId===id)STATE.activeChildId=STATE.children[0]?.id||null;
+      closeModal();render();showToast(`🗑️ 已刪除「${name}」的帳戶`,"#ef4444");
+    });
+  });
+}
+
+function showAddTaskModal(){
+  const cats=["學習","衛生","整潔","家務","作息","運動"];
+  const icons=["⚡","🦷","🛏️","📚","📖","🗑️","😴","🏃","🥗","🎨","🎵","🌱","🧹","🐕","💊","🎯","🖊️","🎒","🧩","🪴"];
+  let selIcon="⚡";
+  openModal(`${mHead("🔧 新增任務")}
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><label style="color:#94a3b8;font-size:0.78rem">任務名稱</label><input id="t-name" placeholder="例如：早上刷牙"></div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">圖示</label>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px">
+          ${icons.map(ic=>`<button class="ic-btn" data-ic="${ic}" style="width:40px;height:40px;border-radius:10px;border:2px solid ${ic===selIcon?"#6366f1":"#334155"};background:${ic===selIcon?"#6366f130":"transparent"};font-size:1.3rem;cursor:pointer">${ic}</button>`).join("")}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div><label style="color:#fbbf24;font-size:0.7rem">點數</label><input id="t-pts" type="number" value="10" min="1"></div>
+        <div><label style="color:#818cf8;font-size:0.7rem">XP</label><input id="t-xp" type="number" value="15" min="1"></div>
+        <div><label style="color:#fcd34d;font-size:0.7rem">金幣</label><input id="t-coins" type="number" value="5" min="1"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label style="color:#94a3b8;font-size:0.7rem">截止時間</label><input id="t-time" type="time" value="18:00"></div>
+        <div><label style="color:#94a3b8;font-size:0.7rem">分類</label><select id="t-cat">${cats.map(c=>`<option>${c}</option>`).join("")}</select></div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <label style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.82rem;cursor:pointer"><input type="checkbox" id="t-daily" checked> 每日重複</label>
+        <label style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.82rem;cursor:pointer"><input type="checkbox" id="t-confirm"> 需家長確認</label>
+      </div>
+      <button id="submit-task" class="btn-primary">✅ 新增任務</button>
+    </div>`,
+  box=>{
+    box.querySelectorAll(".ic-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".ic-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
+      btn.style.borderColor="#6366f1";btn.style.background="#6366f130";selIcon=btn.dataset.ic;
+    }));
+    box.querySelector("#submit-task").addEventListener("click",()=>{
+      const name=box.querySelector("#t-name").value.trim();
+      if(!name){showToast("⚠️ 請輸入任務名稱","#f59e0b");return;}
+      child().tasks.push({id:uid(),name,icon:selIcon,points:+box.querySelector("#t-pts").value||10,xp:+box.querySelector("#t-xp").value||15,coins:+box.querySelector("#t-coins").value||5,dueTime:box.querySelector("#t-time").value,category:box.querySelector("#t-cat").value,daily:box.querySelector("#t-daily").checked,needConfirm:box.querySelector("#t-confirm").checked,completed:false});
+      closeModal();render();showToast("✅ 任務已新增！","#10b981");
+    });
+  });
+}
+
+function showAddRewardModal(){
+  const icons=["🎁","📺","🎮","🍦","🎡","🧸","🌙","🎪","🏖️","🍕","🎈","🎯","🏄","🎭","🧁","🎠","🛍️","🎟️","🛹","🎋"];
+  let selIcon="🎁";
+  openModal(`${mHead("🏆 新增獎勵")}
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div><label style="color:#94a3b8;font-size:0.78rem">獎勵名稱</label><input id="r-name" placeholder="例如：買玩具"></div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">圖示</label>
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px">
+          ${icons.map(ic=>`<button class="ric-btn" data-ic="${ic}" style="width:40px;height:40px;border-radius:10px;border:2px solid ${ic===selIcon?"#f59e0b":"#334155"};background:${ic===selIcon?"#f59e0b30":"transparent"};font-size:1.3rem;cursor:pointer">${ic}</button>`).join("")}
+        </div>
+      </div>
+      <div><label style="color:#fcd34d;font-size:0.78rem">兌換金幣</label><input id="r-cost" type="number" value="50" min="1" style="color:#fcd34d"></div>
+      <button id="submit-reward" class="btn-primary btn-gold">✅ 新增獎勵</button>
+    </div>`,
+  box=>{
+    box.querySelectorAll(".ric-btn").forEach(btn=>btn.addEventListener("click",()=>{
+      box.querySelectorAll(".ric-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
+      btn.style.borderColor="#f59e0b";btn.style.background="#f59e0b30";selIcon=btn.dataset.ic;
+    }));
+    box.querySelector("#submit-reward").addEventListener("click",()=>{
+      const name=box.querySelector("#r-name").value.trim();
+      if(!name){showToast("⚠️ 請輸入獎勵名稱","#f59e0b");return;}
+      child().rewards.push({id:uid(),name,icon:selIcon,cost:+box.querySelector("#r-cost").value||50});
+      closeModal();render();showToast("🏆 獎勵已新增！","#f59e0b");
+    });
+  });
+}
+
+// ─────────────────────────────────
+// EVENT BINDING
+// ─────────────────────────────────
+function bindEvents(){
+  document.getElementById("btn-mode")?.addEventListener("click",()=>{
+    if(STATE.mode==="child") showPinModal(()=>{STATE.mode="parent";STATE.view="parent";render();});
+    else{STATE.mode="child";STATE.view=STATE.activeChildId?"home":"switcher";render();}
+  });
+  document.getElementById("btn-back")?.addEventListener("click",()=>{STATE.view="switcher";render();window.scrollTo(0,0);});
+  document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>{STATE.view=btn.dataset.view;render();window.scrollTo(0,0);}));
+
+  // Leaderboard tabs
+  document.querySelectorAll(".lb-tab").forEach(btn=>btn.addEventListener("click",()=>{STATE.lbTab=btn.dataset.tab;render();}));
+
+  // Switcher
+  document.querySelectorAll(".child-pick").forEach(btn=>btn.addEventListener("click",()=>{STATE.activeChildId=btn.dataset.id;STATE.view="home";render();window.scrollTo(0,0);}));
+  document.getElementById("btn-enter-parent")?.addEventListener("click",()=>{
+    showPinModal(()=>{STATE.mode="parent";if(!STATE.activeChildId)STATE.activeChildId=STATE.children[0].id;STATE.view="parent";render();});
+  });
+  document.querySelectorAll(".parent-child-btn").forEach(btn=>btn.addEventListener("click",()=>{STATE.activeChildId=btn.dataset.id;render();}));
+
+  // Children manager
+  document.getElementById("btn-add-child")?.addEventListener("click",showAddChildModal);
+  document.querySelectorAll(".edit-child-btn").forEach(btn=>btn.addEventListener("click",()=>showEditChildModal(btn.dataset.id)));
+  document.querySelectorAll(".del-child-btn").forEach(btn=>btn.addEventListener("click",()=>showDelChildConfirm(btn.dataset.id)));
+
+  // Tasks & rewards
+  document.querySelectorAll(".complete-btn").forEach(btn=>btn.addEventListener("click",()=>doCompleteTask(btn.dataset.id)));
+  document.querySelectorAll(".redeem-btn").forEach(btn=>btn.addEventListener("click",()=>doRedeem(btn.dataset.id)));
+  document.querySelectorAll(".del-task").forEach(btn=>btn.addEventListener("click",()=>{child().tasks=child().tasks.filter(t=>t.id!=btn.dataset.id);render();showToast("🗑️ 已刪除","#64748b");}));
+  document.querySelectorAll(".del-reward").forEach(btn=>btn.addEventListener("click",()=>{child().rewards=child().rewards.filter(r=>r.id!=btn.dataset.id);render();showToast("🗑️ 已刪除","#64748b");}));
+  document.getElementById("btn-add-task")?.addEventListener("click",showAddTaskModal);
+  document.getElementById("btn-add-reward")?.addEventListener("click",showAddRewardModal);
+
+  document.querySelectorAll(".adj-btn").forEach(btn=>btn.addEventListener("click",()=>doAdjust(+btn.dataset.amt)));
+  document.getElementById("do-adj")?.addEventListener("click",()=>{const v=parseInt(document.getElementById("custom-adj").value);if(!isNaN(v))doAdjust(v);document.getElementById("custom-adj").value="";});
+  document.querySelectorAll(".confirm-btn").forEach(btn=>btn.addEventListener("click",()=>doConfirm(btn.dataset.id,true)));
+  document.querySelectorAll(".reject-btn").forEach(btn=>btn.addEventListener("click",()=>doConfirm(btn.dataset.id,false)));
+}
+
+// ─────────────────────────────────
+// ACTIONS
+// ─────────────────────────────────
+function doCompleteTask(id){
+  const c=child(),t=c.tasks.find(x=>x.id==id);
+  if(!t||t.completed)return;
+  if(t.needConfirm){(c.pendingConfirm=c.pendingConfirm||[]).push(t.id);render();showToast("⏳ 已提交！等待家長確認～","#f59e0b");return;}
+  const oldLv=getLevelInfo(c.xp).current.level;
+  t.completed=true;c.xp+=t.xp;c.points+=t.points;c.coins+=t.coins;
+  if(!c.achievements.includes("first_task"))c.achievements.push("first_task");
+  if(c.points>=500&&!c.achievements.includes("points_500"))c.achievements.push("points_500");
+  if(c.coins>=100&&!c.achievements.includes("coins_100"))c.achievements.push("coins_100");
+  if(c.tasks.every(x=>x.completed)&&!c.achievements.includes("tasks_all"))c.achievements.push("tasks_all");
+  fireParticles();
+  const newLv=getLevelInfo(c.xp).current.level;
+  if(newLv>oldLv){const li=getLevelInfo(c.xp);showToast(`🎉 ${c.name} 升級！成為「${li.current.name}」！`,"#6366f1");}
+  else showToast(`⚡ +${t.points}點  +${t.xp}XP  +${t.coins}💰`,"#10b981");
+  render();
+}
+function doRedeem(id){
+  const c=child(),r=c.rewards.find(x=>x.id==id);
+  if(!r||c.coins<r.cost)return;
+  c.coins-=r.cost;if(!c.achievements.includes("redeem_1"))c.achievements.push("redeem_1");
+  fireParticles();render();showToast(`🎁 兌換成功：${r.name}！`,"#f59e0b");
+}
+function doAdjust(amt){
+  const c=child();c.points=Math.max(0,c.points+amt);
+  if(amt>0){c.xp+=Math.abs(amt);c.coins+=Math.round(Math.abs(amt)/2);}
+  render();showToast(amt>0?`✅ 給 ${c.name} 加 ${amt} 點！`:`⚠️ 扣 ${c.name} ${Math.abs(amt)} 點`,amt>0?"#10b981":"#ef4444");
+}
+function doConfirm(id,ok){
+  const c=child(),t=c.tasks.find(x=>x.id==id);if(!t)return;
+  c.pendingConfirm=(c.pendingConfirm||[]).filter(x=>x!=id);
+  if(ok){t.completed=true;c.xp+=t.xp;c.points+=t.points;c.coins+=t.coins;fireParticles();showToast(`✅ 確認：${t.name}！+${t.points}點`,"#10b981");}
+  else showToast(`❌ 已拒絕：${t.name}`,"#ef4444");
+  render();
+}
+
+// ─────────────────────────────────
+// INIT
+// ─────────────────────────────────
+render();
+</script>
+</body>
+</html>
