@@ -24,21 +24,51 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.55}}
   @keyframes toastIn{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}
   @keyframes glow{0%,100%{box-shadow:0 0 10px currentColor}50%{box-shadow:0 0 28px currentColor}}
-  @keyframes rankPop{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
-  @keyframes barGrow{from{width:0}to{width:var(--w)}}
+  @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
   .pulse-anim{animation:pulse 2s infinite}
   .glow-anim{animation:glow 2s infinite}
   .fade-in{animation:fadeIn 0.25s ease}
   .float-anim{animation:float 3s ease-in-out infinite}
+  .spin{animation:spin 1s linear infinite}
+  #loading-screen{position:fixed;inset:0;background:#0a0f1e;z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
 </style>
 </head>
 <body>
-<div id="app"></div>
+
+<!-- Loading Screen -->
+<div id="loading-screen">
+  <div style="font-size:3.5rem" class="float-anim">⚡</div>
+  <div style="font-size:1.2rem;font-weight:900;background:linear-gradient(90deg,#6366f1,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">超人養成系統</div>
+  <div style="display:flex;align-items:center;gap:8px;color:#475569;font-size:0.82rem">
+    <div style="width:18px;height:18px;border:2px solid #6366f1;border-top-color:transparent;border-radius:50%" class="spin"></div>
+    連接 Google 雲端中…
+  </div>
+</div>
+
+<div id="app" style="display:none"></div>
 <div id="particles" style="position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999"></div>
 <div id="toast-container" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);width:calc(100% - 32px);max-width:440px;z-index:3000"></div>
 
-<script>
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ─── Firebase 設定 ───
+const firebaseConfig = {
+  apiKey: "AIzaSyDWKt-HuYiDlIyR6kN-gkDaLDfwsi4ZPB8",
+  authDomain: "hero-kids-system.firebaseapp.com",
+  projectId: "hero-kids-system",
+  storageBucket: "hero-kids-system.firebasestorage.app",
+  messagingSenderId: "78796965072",
+  appId: "1:78796965072:web:adcec23f81e151a9bc4ad5"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const DATA_DOC = doc(db, "heroKids", "familyData");
+
 // ─────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────
@@ -65,11 +95,6 @@ const ACHIEVEMENTS=[
 const CAT_COLORS={"衛生":"#06b6d4","整潔":"#10b981","學習":"#6366f1","家務":"#f59e0b","作息":"#8b5cf6","運動":"#ec4899"};
 const AVATARS=["🦸","🧒","👦","👧","🐯","🦊","🐻","🐼","🦁","🐸","🐨","🐺","🦄","🐲","🤖","👑","🧙","🦅","🐬","🌟"];
 const THEME_COLORS=["#6366f1","#10b981","#f59e0b","#ec4899","#06b6d4","#8b5cf6","#f97316","#14b8a6"];
-const RANK_META=[
-  {medal:"🥇",bg:"linear-gradient(135deg,#fbbf24,#f59e0b)",border:"#fbbf24",label:"第一名"},
-  {medal:"🥈",bg:"linear-gradient(135deg,#94a3b8,#64748b)",border:"#94a3b8",label:"第二名"},
-  {medal:"🥉",bg:"linear-gradient(135deg,#d97706,#b45309)",border:"#d97706",label:"第三名"},
-];
 
 function makeDefaultTasks(){return[
   {id:uid(),name:"早上刷牙",icon:"🦷",points:10,xp:15,coins:5,dueTime:"08:00",daily:true,needConfirm:false,completed:false,category:"衛生"},
@@ -94,15 +119,98 @@ function makeDefaultRewards(){return[
 let STATE={
   mode:"child",
   view:"switcher",
-  lbTab:"points",   // leaderboard tab: points | xp | coins | streak | tasks
-  activeChildId:"c1",
+  lbTab:"points",
+  activeChildId:null,
   pin:"1234",
-  children:[
-    {id:"c1",name:"小明",avatar:"🦸",color:"#6366f1",xp:280,points:145,coins:88,streak:4,totalDays:12,achievements:["first_task","streak_3"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
-    {id:"c2",name:"小花",avatar:"👧",color:"#ec4899",xp:520,points:210,coins:130,streak:7,totalDays:18,achievements:["first_task","streak_3","streak_7","coins_100"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
-    {id:"c3",name:"小虎",avatar:"🐯",color:"#f59e0b",xp:95,points:55,coins:30,streak:2,totalDays:5,achievements:["first_task"],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
-  ]
+  children:[],
+  _saving:false,
+  _online:true,
 };
+
+// ─────────────────────────────────
+// FIREBASE SYNC
+// ─────────────────────────────────
+let _unsubscribe=null;
+let _ignoreNextSnapshot=false; // prevent echo after local save
+
+async function loadFromCloud(){
+  try{
+    const snap=await getDoc(DATA_DOC);
+    if(snap.exists()){
+      const data=snap.data();
+      STATE.children=data.children||[];
+      STATE.pin=data.pin||"1234";
+    } else {
+      // First time: create default data
+      STATE.children=[
+        {id:uid(),name:"小明",avatar:"🦸",color:"#6366f1",xp:0,points:0,coins:0,streak:0,totalDays:0,achievements:[],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()},
+      ];
+      await saveToCloud();
+    }
+    if(STATE.children.length>0&&!STATE.activeChildId){
+      STATE.activeChildId=STATE.children[0].id;
+    }
+  } catch(e){
+    console.error("Cloud load error:",e);
+    showToast("⚠️ 雲端載入失敗，使用本機資料","#ef4444");
+    // fallback to localStorage
+    const local=localStorage.getItem("heroKidsData");
+    if(local){const d=JSON.parse(local);STATE.children=d.children||[];STATE.pin=d.pin||"1234";}
+    if(STATE.children.length===0){
+      STATE.children=[{id:uid(),name:"小明",avatar:"🦸",color:"#6366f1",xp:0,points:0,coins:0,streak:0,totalDays:0,achievements:[],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()}];
+    }
+    STATE.activeChildId=STATE.children[0].id;
+    STATE._online=false;
+  }
+}
+
+async function saveToCloud(){
+  const payload={children:STATE.children,pin:STATE.pin,updatedAt:new Date().toISOString()};
+  // Save to localStorage always (offline fallback)
+  localStorage.setItem("heroKidsData",JSON.stringify(payload));
+  if(!STATE._online)return;
+  try{
+    _ignoreNextSnapshot=true;
+    await setDoc(DATA_DOC,payload);
+  } catch(e){
+    console.error("Cloud save error:",e);
+    STATE._online=false;
+    showToast("⚠️ 雲端儲存失敗，已備份到本機","#f59e0b");
+  }
+}
+
+function subscribeRealtime(){
+  if(_unsubscribe)_unsubscribe();
+  _unsubscribe=onSnapshot(DATA_DOC,(snap)=>{
+    if(_ignoreNextSnapshot){_ignoreNextSnapshot=false;return;}
+    if(snap.exists()){
+      const data=snap.data();
+      // Merge: keep UI state, update data
+      const prevActiveId=STATE.activeChildId;
+      STATE.children=data.children||[];
+      STATE.pin=data.pin||"1234";
+      if(!STATE.children.find(c=>c.id===prevActiveId)&&STATE.children.length>0){
+        STATE.activeChildId=STATE.children[0].id;
+      }
+      render();
+      showSyncBadge();
+    }
+  },(err)=>{
+    console.warn("Realtime listen error:",err);
+    STATE._online=false;
+  });
+}
+
+function showSyncBadge(){
+  const existing=document.getElementById("sync-badge");
+  if(existing)existing.remove();
+  const el=document.createElement("div");
+  el.id="sync-badge";
+  el.style.cssText="position:fixed;bottom:90px;right:12px;background:#10b98120;border:1px solid #10b98150;color:#10b981;border-radius:99px;padding:4px 10px;font-size:0.65rem;font-weight:700;z-index:500;animation:toastIn 0.3s ease";
+  el.textContent="☁️ 已同步";
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),2000);
+}
 
 // ─────────────────────────────────
 // UTILS
@@ -160,17 +268,19 @@ function render(){
   const isParent=STATE.mode==="parent";
   const showNav=STATE.view!=="switcher";
   const app=document.getElementById("app");
+  if(!app)return;
   app.innerHTML=`${renderHeader(isParent)}<div id="vc" class="fade-in" style="padding:12px 0 8px"></div>${showNav?renderNav():""}`;
   const vc=document.getElementById("vc");
-  const c=child();const li=getLevelInfo(c.xp);
-  if(STATE.view==="switcher")             vc.innerHTML=renderSwitcher();
-  else if(STATE.view==="home")            vc.innerHTML=renderHome(c,li);
-  else if(STATE.view==="tasks")           vc.innerHTML=renderTasks(c,isParent);
-  else if(STATE.view==="rewards")         vc.innerHTML=renderRewards(c,isParent);
-  else if(STATE.view==="achievements")    vc.innerHTML=renderAchievements(c,li);
-  else if(STATE.view==="leaderboard")     vc.innerHTML=renderLeaderboard();
-  else if(STATE.view==="parent")          vc.innerHTML=renderParent();
-  else if(STATE.view==="children-mgr")    vc.innerHTML=renderChildrenMgr();
+  const c=child();
+  const li=c?getLevelInfo(c.xp):null;
+  if(STATE.view==="switcher")          vc.innerHTML=renderSwitcher();
+  else if(STATE.view==="home"&&c)      vc.innerHTML=renderHome(c,li);
+  else if(STATE.view==="tasks"&&c)     vc.innerHTML=renderTasks(c,isParent);
+  else if(STATE.view==="rewards"&&c)   vc.innerHTML=renderRewards(c,isParent);
+  else if(STATE.view==="achievements"&&c) vc.innerHTML=renderAchievements(c,li);
+  else if(STATE.view==="leaderboard")  vc.innerHTML=renderLeaderboard();
+  else if(STATE.view==="parent")       vc.innerHTML=renderParent();
+  else if(STATE.view==="children-mgr") vc.innerHTML=renderChildrenMgr();
   bindEvents();
 }
 
@@ -180,13 +290,16 @@ function render(){
 function renderHeader(isParent){
   const c=child();
   const showBack=STATE.view!=="switcher"&&STATE.mode==="child";
+  const onlineIndicator=STATE._online
+    ?`<span style="width:7px;height:7px;border-radius:50%;background:#10b981;display:inline-block;box-shadow:0 0 6px #10b981;margin-right:4px"></span>`
+    :`<span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;margin-right:4px"></span>`;
   return`<div style="background:linear-gradient(180deg,#0a0f1e,#0f172a);padding:13px 16px 11px;position:sticky;top:0;z-index:100;border-bottom:1px solid #1e293b">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <div style="display:flex;align-items:center;gap:10px">
         ${showBack?`<button id="btn-back" style="background:#1e293b;border:1px solid #334155;color:#94a3b8;border-radius:10px;padding:5px 10px;cursor:pointer;font-size:0.78rem;white-space:nowrap">← 切換</button>`:""}
         <div>
           <div style="font-size:1.18rem;font-weight:900">⚡ <span style="background:linear-gradient(90deg,#6366f1,#06b6d4);-webkit-background-clip:text;-webkit-text-fill-color:transparent">超人養成系統</span></div>
-          <div style="font-size:0.6rem;color:#475569">${STATE.view!=="switcher"?`目前：${c.avatar} ${c.name}`:"Hero Kids System"}</div>
+          <div style="font-size:0.6rem;color:#475569;display:flex;align-items:center">${onlineIndicator}${STATE._online?"Google 雲端同步中":"本機模式"}</div>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
@@ -269,7 +382,7 @@ function renderSwitcher(){
 }
 
 // ─────────────────────────────────
-// LEADERBOARD ← 新功能
+// LEADERBOARD
 // ─────────────────────────────────
 function renderLeaderboard(){
   const tabs=[
@@ -280,54 +393,31 @@ function renderLeaderboard(){
     {id:"tasks",label:"📋 任務",key:"_tasks",unit:"個",color:"#10b981"},
   ];
   const cur=tabs.find(t=>t.id===STATE.lbTab)||tabs[0];
-
-  // Build sorted list
-  const ranked=[...STATE.children].map(c=>({
-    ...c,
-    _tasks:c.tasks.filter(t=>t.completed).length,
-  })).sort((a,b)=>b[cur.key]-a[cur.key]);
-
+  const ranked=[...STATE.children].map(c=>({...c,_tasks:c.tasks.filter(t=>t.completed).length})).sort((a,b)=>b[cur.key]-a[cur.key]);
   const maxVal=ranked[0]?ranked[0][cur.key]||1:1;
-
-  // Top 3 podium (only if 3+ children)
   const hasPodium=ranked.length>=2;
   const first=ranked[0],second=ranked[1]||null,third=ranked[2]||null;
-
-  // Determine if we're in an active child context
   const myRank=ranked.findIndex(c=>c.id===STATE.activeChildId)+1;
   const myEntry=ranked.find(c=>c.id===STATE.activeChildId);
-
   return`<div style="padding:0 14px 20px">
-
-    <!-- Title -->
     <div style="text-align:center;margin-bottom:18px">
       <div style="font-size:1.8rem;margin-bottom:4px" class="float-anim">🏆</div>
       <div style="font-size:1.2rem;font-weight:900;background:linear-gradient(90deg,#fbbf24,#f97316);-webkit-background-clip:text;-webkit-text-fill-color:transparent">家庭超人排行榜</div>
       <div style="color:#475569;font-size:0.75rem;margin-top:3px">看看今天誰是最強超人！</div>
     </div>
-
-    <!-- Tab selector -->
     <div style="display:flex;gap:6px;margin-bottom:18px;overflow-x:auto;padding-bottom:4px">
-      ${tabs.map(t=>`<button class="lb-tab" data-tab="${t.id}" style="flex-shrink:0;padding:7px 12px;border-radius:20px;border:1px solid ${STATE.lbTab===t.id?t.color:"#334155"};background:${STATE.lbTab===t.id?t.color+"25":"transparent"};color:${STATE.lbTab===t.id?t.color:"#64748b"};font-weight:700;font-size:0.72rem;cursor:pointer;transition:all 0.2s;white-space:nowrap">${t.label}</button>`).join("")}
+      ${tabs.map(t=>`<button class="lb-tab" data-tab="${t.id}" style="flex-shrink:0;padding:7px 12px;border-radius:20px;border:1px solid ${STATE.lbTab===t.id?t.color:"#334155"};background:${STATE.lbTab===t.id?t.color+"25":"transparent"};color:${STATE.lbTab===t.id?t.color:"#64748b"};font-weight:700;font-size:0.72rem;cursor:pointer;white-space:nowrap">${t.label}</button>`).join("")}
     </div>
-
-    <!-- Podium (top 3) -->
-    ${hasPodium?`<div style="background:linear-gradient(135deg,#1a1040,#1e293b);border-radius:24px;padding:20px 16px 24px;margin-bottom:18px;border:1px solid #334155;position:relative;overflow:hidden">
+    ${hasPodium&&first?`<div style="background:linear-gradient(135deg,#1a1040,#1e293b);border-radius:24px;padding:20px 16px 24px;margin-bottom:18px;border:1px solid #334155;position:relative;overflow:hidden">
       <div style="position:absolute;top:-20px;right:-20px;font-size:8rem;opacity:0.04;user-select:none">🏆</div>
       <div style="text-align:center;font-size:0.7rem;color:#64748b;font-weight:700;margin-bottom:16px;text-transform:uppercase;letter-spacing:1px">${cur.label} 排行</div>
-
-      <!-- Podium visual -->
       <div style="display:flex;align-items:flex-end;justify-content:center;gap:10px;margin-bottom:6px">
-
-        <!-- 2nd place -->
         ${second?`<div style="display:flex;flex-direction:column;align-items:center;flex:1">
-          <div style="font-size:1.6rem;margin-bottom:4px;opacity:0.9">${second.avatar}</div>
+          <div style="font-size:1.6rem;margin-bottom:4px">${second.avatar}</div>
           <div style="font-size:0.72rem;font-weight:800;color:#94a3b8;margin-bottom:4px;text-align:center">${second.name}</div>
           <div style="font-size:0.9rem;font-weight:900;color:#94a3b8;margin-bottom:6px">${second[cur.key].toLocaleString()}<span style="font-size:0.6rem">${cur.unit}</span></div>
-          <div style="background:linear-gradient(180deg,#94a3b8,#64748b);border-radius:12px 12px 0 0;width:100%;height:60px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;box-shadow:0 0 14px #94a3b850">🥈</div>
+          <div style="background:linear-gradient(180deg,#94a3b8,#64748b);border-radius:12px 12px 0 0;width:100%;height:60px;display:flex;align-items:center;justify-content:center;font-size:1.6rem">🥈</div>
         </div>`:`<div style="flex:1"></div>`}
-
-        <!-- 1st place -->
         <div style="display:flex;flex-direction:column;align-items:center;flex:1.2">
           <div style="font-size:1.1rem;margin-bottom:2px" class="float-anim">👑</div>
           <div style="font-size:2rem;margin-bottom:4px;filter:drop-shadow(0 0 10px ${first.color})">${first.avatar}</div>
@@ -335,20 +425,15 @@ function renderLeaderboard(){
           <div style="font-size:1.1rem;font-weight:900;color:#fbbf24;margin-bottom:6px">${first[cur.key].toLocaleString()}<span style="font-size:0.62rem">${cur.unit}</span></div>
           <div style="background:linear-gradient(180deg,#fbbf24,#f59e0b);border-radius:12px 12px 0 0;width:100%;height:84px;display:flex;align-items:center;justify-content:center;font-size:2rem;box-shadow:0 0 20px #fbbf2460">🥇</div>
         </div>
-
-        <!-- 3rd place -->
         ${third?`<div style="display:flex;flex-direction:column;align-items:center;flex:1">
-          <div style="font-size:1.6rem;margin-bottom:4px;opacity:0.9">${third.avatar}</div>
+          <div style="font-size:1.6rem;margin-bottom:4px">${third.avatar}</div>
           <div style="font-size:0.72rem;font-weight:800;color:#d97706;margin-bottom:4px;text-align:center">${third.name}</div>
           <div style="font-size:0.9rem;font-weight:900;color:#d97706;margin-bottom:6px">${third[cur.key].toLocaleString()}<span style="font-size:0.6rem">${cur.unit}</span></div>
-          <div style="background:linear-gradient(180deg,#d97706,#b45309);border-radius:12px 12px 0 0;width:100%;height:44px;display:flex;align-items:center;justify-content:center;font-size:1.6rem;box-shadow:0 0 14px #d9770650">🥉</div>
+          <div style="background:linear-gradient(180deg,#d97706,#b45309);border-radius:12px 12px 0 0;width:100%;height:44px;display:flex;align-items:center;justify-content:center;font-size:1.6rem">🥉</div>
         </div>`:`<div style="flex:1"></div>`}
       </div>
-      <!-- stage base -->
       <div style="background:#0f172a;border-radius:0 0 8px 8px;height:8px;margin:-2px 0 0"></div>
     </div>`:""}
-
-    <!-- Full ranking list -->
     <div style="margin-bottom:16px">
       <div style="font-size:0.68rem;color:#64748b;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">完整排名</div>
       ${ranked.map((c,i)=>{
@@ -359,10 +444,10 @@ function renderLeaderboard(){
         if(i===0)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥇</span>`;
         else if(i===1)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥈</span>`;
         else if(i===2)rankIcon=`<span style="font-size:1.2rem;min-width:20px;text-align:center">🥉</span>`;
-        return`<div style="background:${isMe?"linear-gradient(135deg,"+c.color+"20,#1e293b)":"#1e293b"};border:2px solid ${isMe?c.color+"80":"#334155"};border-radius:16px;padding:13px 14px;margin-bottom:9px;transition:all 0.3s">
+        return`<div style="background:${isMe?"linear-gradient(135deg,"+c.color+"20,#1e293b)":"#1e293b"};border:2px solid ${isMe?c.color+"80":"#334155"};border-radius:16px;padding:13px 14px;margin-bottom:9px">
           <div style="display:flex;align-items:center;gap:11px;margin-bottom:9px">
             ${rankIcon}
-            <div style="width:40px;height:40px;border-radius:50%;font-size:1.5rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:2px solid ${c.color};box-shadow:0 0 10px ${c.color}40;flex-shrink:0">${c.avatar}</div>
+            <div style="width:40px;height:40px;border-radius:50%;font-size:1.5rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,${c.color}40,transparent);border:2px solid ${c.color};flex-shrink:0">${c.avatar}</div>
             <div style="flex:1;min-width:0">
               <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
                 <span style="font-weight:900;font-size:0.92rem">${c.name}</span>
@@ -376,23 +461,19 @@ function renderLeaderboard(){
               <div style="font-size:0.6rem;color:#64748b">${cur.unit}</div>
             </div>
           </div>
-          <!-- Progress bar -->
           <div style="background:#0f172a;border-radius:99px;height:8px;overflow:hidden;border:1px solid #334155">
-            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${cur.color},${cur.color}80);border-radius:99px;transition:width 0.8s;box-shadow:0 0 6px ${cur.color}60"></div>
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,${cur.color},${cur.color}80);border-radius:99px;transition:width 0.8s"></div>
           </div>
-          <!-- Mini stats row -->
           <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
             <span style="font-size:0.64rem;color:#fbbf24">⭐${c.points}點</span>
             <span style="font-size:0.64rem;color:#818cf8">⚡${c.xp}XP</span>
             <span style="font-size:0.64rem;color:#fcd34d">💰${c.coins}幣</span>
             <span style="font-size:0.64rem;color:#f97316">🔥${c.streak}天</span>
-            <span style="font-size:0.64rem;color:#10b981">📋${c.tasks.filter(t=>t.completed).length}/${c.tasks.length}任務</span>
+            <span style="font-size:0.64rem;color:#10b981">📋${c.tasks.filter(t=>t.completed).length}/${c.tasks.length}</span>
           </div>
         </div>`;
       }).join("")}
     </div>
-
-    <!-- My rank banner (child mode) -->
     ${myEntry&&STATE.mode==="child"?`<div style="background:linear-gradient(135deg,${myEntry.color}25,#1e293b);border:2px solid ${myEntry.color}60;border-radius:18px;padding:14px 16px;text-align:center">
       <div style="font-size:0.72rem;color:#64748b;font-weight:700;margin-bottom:6px">🌟 ${myEntry.name} 的排名</div>
       <div style="font-size:2rem;font-weight:900;color:${myEntry.color};margin-bottom:4px">第 ${myRank} 名</div>
@@ -464,7 +545,6 @@ function rewardCard(r,coins,isParent){
 // ─────────────────────────────────
 function renderHome(c,li){
   const done=c.tasks.filter(t=>t.completed).length,total=c.tasks.length,pct=total>0?Math.round((done/total)*100):0;
-  // My rank
   const myRankPoints=[...STATE.children].sort((a,b)=>b.points-a.points).findIndex(x=>x.id===c.id)+1;
   return`<div style="padding:0 14px 16px">
     <div style="background:linear-gradient(135deg,#1e1b4b,#312e81,#1e1b4b);border-radius:24px;padding:18px;margin-bottom:14px;border:2px solid ${c.color}40;position:relative;overflow:hidden">
@@ -475,7 +555,7 @@ function renderHome(c,li){
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-size:1rem;font-weight:900">${c.name}</span>
             <span style="background:${c.color}30;color:${c.color};border-radius:99px;padding:1px 8px;font-size:0.65rem;font-weight:700;border:1px solid ${c.color}50">Lv.${li.current.level}</span>
-            <span style="background:#fbbf2430;color:#fbbf24;border-radius:99px;padding:1px 7px;font-size:0.62rem;font-weight:700;border:1px solid #fbbf2450">🏅 積分第${myRankPoints}名</span>
+            ${STATE.children.length>1?`<span style="background:#fbbf2430;color:#fbbf24;border-radius:99px;padding:1px 7px;font-size:0.62rem;font-weight:700;border:1px solid #fbbf2450">🏅 積分第${myRankPoints}名</span>`:""}
           </div>
           <div style="color:${c.color};font-weight:700;font-size:0.75rem;margin-bottom:4px">${li.current.badge} ${li.current.name}</div>
           ${xpBar(c.xp,c.color)}
@@ -526,7 +606,7 @@ function renderTasks(c,isParent){
       <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">${cat}</div>
       ${c.tasks.filter(t=>t.category===cat).map(t=>`<div style="position:relative">${taskCard(t,isParent)}${isParent?`<button class="del-task" data-id="${t.id}" style="position:absolute;top:8px;right:8px;background:#ef444430;border:1px solid #ef444460;color:#ef4444;border-radius:8px;padding:2px 8px;font-size:0.62rem;cursor:pointer">刪除</button>`:""}</div>`).join("")}
     </div>`).join("")}
-    ${c.tasks.length===0?`<div style="text-align:center;padding:40px;color:#475569;font-size:0.9rem">還沒有任務 📭</div>`:""}
+    ${c.tasks.length===0?`<div style="text-align:center;padding:40px;color:#475569">還沒有任務 📭</div>`:""}
   </div>`;
 }
 
@@ -561,34 +641,28 @@ function renderAchievements(c,li){
     </div>
     <div style="margin-bottom:20px">
       <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">升級路徑</div>
-      ${LEVELS.map(lv=>{
-        const reached=c.xp>=lv.minXP,isCur=li.current.level===lv.level;
-        return`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px;opacity:${reached?1:0.36}">
-          <div style="width:34px;height:34px;border-radius:50%;background:${reached?lv.color+"30":"#1e293b"};border:2px solid ${reached?lv.color:"#334155"};display:flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0">${lv.badge}</div>
-          <div style="flex:1"><div style="color:${reached?lv.color:"#64748b"};font-weight:700;font-size:0.8rem">${lv.name}</div><div style="color:#475569;font-size:0.63rem">Lv.${lv.level} · ${lv.minXP} XP</div></div>
-          ${isCur?`<span style="background:#6366f130;color:#818cf8;border-radius:99px;padding:2px 10px;font-size:0.62rem;font-weight:700">目前</span>`:""}
-        </div>`;
-      }).join("")}
+      ${LEVELS.map(lv=>{const reached=c.xp>=lv.minXP,isCur=li.current.level===lv.level;return`<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px;opacity:${reached?1:0.36}">
+        <div style="width:34px;height:34px;border-radius:50%;background:${reached?lv.color+"30":"#1e293b"};border:2px solid ${reached?lv.color:"#334155"};display:flex;align-items:center;justify-content:center;font-size:0.9rem;flex-shrink:0">${lv.badge}</div>
+        <div style="flex:1"><div style="color:${reached?lv.color:"#64748b"};font-weight:700;font-size:0.8rem">${lv.name}</div><div style="color:#475569;font-size:0.63rem">Lv.${lv.level} · ${lv.minXP} XP</div></div>
+        ${isCur?`<span style="background:#6366f130;color:#818cf8;border-radius:99px;padding:2px 10px;font-size:0.62rem;font-weight:700">目前</span>`:""}
+      </div>`;}).join("")}
     </div>
     <div>
       <div style="color:#64748b;font-size:0.67rem;font-weight:700;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px">成就徽章 (${c.achievements.length}/${ACHIEVEMENTS.length})</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        ${ACHIEVEMENTS.map(ach=>{
-          const unlocked=c.achievements.includes(ach.id);
-          return`<div style="background:${unlocked?"rgba(99,102,241,0.15)":"#1e293b"};border:2px solid ${unlocked?"#6366f1":"#334155"};border-radius:14px;padding:14px;text-align:center;opacity:${unlocked?1:0.44}">
-            <div style="font-size:2rem;margin-bottom:5px;filter:${unlocked?"none":"grayscale(1)"}">${ach.icon}</div>
-            <div style="font-weight:800;color:${unlocked?"#f1f5f9":"#64748b"};font-size:0.76rem">${ach.name}</div>
-            <div style="color:#475569;font-size:0.6rem;margin-top:3px">${ach.desc}</div>
-            ${unlocked?`<div style="color:#818cf8;font-size:0.6rem;font-weight:700;margin-top:4px">✅ 已解鎖</div>`:`<div style="color:#334155;font-size:0.6rem;margin-top:4px">🔒 未解鎖</div>`}
-          </div>`;
-        }).join("")}
+        ${ACHIEVEMENTS.map(ach=>{const unlocked=c.achievements.includes(ach.id);return`<div style="background:${unlocked?"rgba(99,102,241,0.15)":"#1e293b"};border:2px solid ${unlocked?"#6366f1":"#334155"};border-radius:14px;padding:14px;text-align:center;opacity:${unlocked?1:0.44}">
+          <div style="font-size:2rem;margin-bottom:5px;filter:${unlocked?"none":"grayscale(1)"}">${ach.icon}</div>
+          <div style="font-weight:800;color:${unlocked?"#f1f5f9":"#64748b"};font-size:0.76rem">${ach.name}</div>
+          <div style="color:#475569;font-size:0.6rem;margin-top:3px">${ach.desc}</div>
+          ${unlocked?`<div style="color:#818cf8;font-size:0.6rem;font-weight:700;margin-top:4px">✅ 已解鎖</div>`:`<div style="color:#334155;font-size:0.6rem;margin-top:4px">🔒 未解鎖</div>`}
+        </div>`;}).join("")}
       </div>
     </div>
   </div>`;
 }
 
 // ─────────────────────────────────
-// PARENT DASHBOARD
+// PARENT
 // ─────────────────────────────────
 function renderParent(){
   const c=child();const li=getLevelInfo(c.xp);const pend=c.pendingConfirm||[];
@@ -678,7 +752,7 @@ function renderChildrenMgr(){
           </div>
           <div style="display:flex;flex-direction:column;gap:7px;flex-shrink:0">
             <button class="edit-child-btn" data-id="${c.id}" style="background:#6366f120;border:1px solid #6366f150;color:#818cf8;border-radius:10px;padding:6px 12px;cursor:pointer;font-size:0.7rem;font-weight:700;white-space:nowrap">✏️ 編輯</button>
-            ${STATE.children.length>1?`<button class="del-child-btn" data-id="${c.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:10px;padding:6px 12px;cursor:pointer;font-size:0.7rem;font-weight:700;white-space:nowrap">🗑️ 刪除</button>`:`<div style="height:30px;display:flex;align-items:center;justify-content:center;font-size:0.6rem;color:#334155">最少1位</div>`}
+            ${STATE.children.length>1?`<button class="del-child-btn" data-id="${c.id}" style="background:#ef444420;border:1px solid #ef444450;color:#ef4444;border-radius:10px;padding:6px 12px;cursor:pointer;font-size:0.7rem;font-weight:700;white-space:nowrap">🗑️ 刪除</button>`:`<div style="height:30px;display:flex;align-items:center;font-size:0.6rem;color:#334155">最少1位</div>`}
           </div>
         </div>
       </div>`;
@@ -703,7 +777,7 @@ function showPinModal(onSuccess){
     box.querySelector("#pin-input").focus();
     const doPin=()=>{
       if(box.querySelector("#pin-input").value===STATE.pin){closeModal();if(onSuccess)onSuccess();}
-      else{showToast("❌ 密碼錯誤！預設：1234","#ef4444");box.querySelector("#pin-input").value="";}
+      else{showToast("❌ 密碼錯誤！","#ef4444");box.querySelector("#pin-input").value="";}
     };
     box.querySelector("#pin-input").addEventListener("keydown",e=>{if(e.key==="Enter")doPin()});
     box.querySelector("#pin-submit").addEventListener("click",doPin);
@@ -711,20 +785,20 @@ function showPinModal(onSuccess){
 }
 
 function showAddChildModal(){
-  if(STATE.children.length>=8){showToast("⚠️ 最多8位小超人","#f59e0b");return;}
+  if(STATE.children.length>=8){showToast("⚠️ 最多8位","#f59e0b");return;}
   let selAvatar=AVATARS[STATE.children.length%AVATARS.length];
   let selColor=THEME_COLORS[STATE.children.length%THEME_COLORS.length];
   openModal(`${mHead("🦸 新增小超人帳戶")}
     <div style="display:flex;flex-direction:column;gap:13px">
-      <div><label style="color:#94a3b8;font-size:0.78rem">小超人的名字</label><input id="child-name" placeholder="例如：小明、妹妹…"></div>
-      <div><label style="color:#94a3b8;font-size:0.78rem">選擇頭像</label>
+      <div><label style="color:#94a3b8;font-size:0.78rem">名字</label><input id="child-name" placeholder="例如：小明、妹妹…"></div>
+      <div><label style="color:#94a3b8;font-size:0.78rem">頭像</label>
         <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:6px">
           ${AVATARS.map(av=>`<button class="av-btn" data-av="${av}" style="width:44px;height:44px;border-radius:12px;border:2px solid ${av===selAvatar?"#6366f1":"#334155"};background:${av===selAvatar?"#6366f130":"transparent"};font-size:1.45rem;cursor:pointer">${av}</button>`).join("")}
         </div>
       </div>
-      <div><label style="color:#94a3b8;font-size:0.78rem">選擇主題色</label>
+      <div><label style="color:#94a3b8;font-size:0.78rem">主題色</label>
         <div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">
-          ${THEME_COLORS.map(col=>`<button class="col-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer;transition:all 0.2s"></button>`).join("")}
+          ${THEME_COLORS.map(col=>`<button class="col-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer"></button>`).join("")}
         </div>
       </div>
       <button id="submit-child" class="btn-primary btn-green">🦸 建立帳戶</button>
@@ -738,12 +812,13 @@ function showAddChildModal(){
       box.querySelectorAll(".col-btn").forEach(b=>b.style.borderColor="transparent");
       btn.style.borderColor="#fff";selColor=btn.dataset.col;
     }));
-    box.querySelector("#submit-child").addEventListener("click",()=>{
+    box.querySelector("#submit-child").addEventListener("click",async()=>{
       const name=box.querySelector("#child-name").value.trim();
       if(!name){showToast("⚠️ 請輸入名字","#f59e0b");return;}
       const nc={id:uid(),name,avatar:selAvatar,color:selColor,xp:0,points:0,coins:0,streak:0,totalDays:0,achievements:[],pendingConfirm:[],tasks:makeDefaultTasks(),rewards:makeDefaultRewards()};
       STATE.children.push(nc);STATE.activeChildId=nc.id;
-      closeModal();fireParticles();showToast(`🦸 ${name} 的帳戶建立完成！`,"#10b981");render();
+      await saveToCloud();
+      closeModal();fireParticles();showToast(`🦸 ${name} 的帳戶已儲存到雲端！`,"#10b981");render();
     });
   });
 }
@@ -761,10 +836,10 @@ function showEditChildModal(id){
       </div>
       <div><label style="color:#94a3b8;font-size:0.78rem">主題色</label>
         <div style="display:flex;gap:8px;margin-top:7px;flex-wrap:wrap">
-          ${THEME_COLORS.map(col=>`<button class="ecol-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer;transition:all 0.2s"></button>`).join("")}
+          ${THEME_COLORS.map(col=>`<button class="ecol-btn" data-col="${col}" style="width:36px;height:36px;border-radius:50%;background:${col};border:3px solid ${col===selColor?"#fff":"transparent"};cursor:pointer"></button>`).join("")}
         </div>
       </div>
-      <button id="save-child" class="btn-primary">💾 儲存變更</button>
+      <button id="save-child" class="btn-primary">💾 儲存到雲端</button>
     </div>`,
   box=>{
     box.querySelectorAll(".eav-btn").forEach(btn=>btn.addEventListener("click",()=>{
@@ -775,10 +850,11 @@ function showEditChildModal(id){
       box.querySelectorAll(".ecol-btn").forEach(b=>b.style.borderColor="transparent");
       btn.style.borderColor="#fff";selColor=btn.dataset.col;
     }));
-    box.querySelector("#save-child").addEventListener("click",()=>{
+    box.querySelector("#save-child").addEventListener("click",async()=>{
       const name=box.querySelector("#edit-name").value.trim();
       if(!name){showToast("⚠️ 請輸入名字","#f59e0b");return;}
-      c.name=name;c.avatar=selAvatar;c.color=selColor;closeModal();render();showToast("💾 帳戶已更新","#6366f1");
+      c.name=name;c.avatar=selAvatar;c.color=selColor;
+      await saveToCloud();closeModal();render();showToast("💾 已更新並同步到雲端","#6366f1");
     });
   });
 }
@@ -788,18 +864,19 @@ function showDelChildConfirm(id){
   openModal(`${mHead("🗑️ 刪除帳戶")}
     <div style="text-align:center;padding:8px 0">
       <div style="font-size:3.5rem;margin-bottom:12px">${c.avatar}</div>
-      <div style="font-size:1rem;font-weight:800;margin-bottom:10px">確定刪除「${c.name}」的帳戶？</div>
-      <div style="color:#ef4444;font-size:0.8rem;margin-bottom:22px;background:#ef444420;border-radius:12px;padding:12px;line-height:1.6">⚠️ 刪除後所有資料將永久消失，無法復原！</div>
+      <div style="font-size:1rem;font-weight:800;margin-bottom:10px">確定刪除「${c.name}」？</div>
+      <div style="color:#ef4444;font-size:0.8rem;margin-bottom:22px;background:#ef444420;border-radius:12px;padding:12px;line-height:1.6">⚠️ 雲端資料也會一起刪除，無法復原！</div>
       <div style="display:flex;gap:10px">
         <button onclick="closeModal()" style="flex:1;padding:12px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#94a3b8;font-weight:700;cursor:pointer">取消</button>
         <button id="confirm-del" class="btn-primary btn-red" style="flex:1">確定刪除</button>
       </div>
     </div>`,
   box=>{
-    box.querySelector("#confirm-del").addEventListener("click",()=>{
-      const name=c.name;STATE.children=STATE.children.filter(x=>x.id!==id);
+    box.querySelector("#confirm-del").addEventListener("click",async()=>{
+      const name=c.name;
+      STATE.children=STATE.children.filter(x=>x.id!==id);
       if(STATE.activeChildId===id)STATE.activeChildId=STATE.children[0]?.id||null;
-      closeModal();render();showToast(`🗑️ 已刪除「${name}」的帳戶`,"#ef4444");
+      await saveToCloud();closeModal();render();showToast(`🗑️ 已刪除「${name}」`,"#ef4444");
     });
   });
 }
@@ -829,18 +906,18 @@ function showAddTaskModal(){
         <label style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.82rem;cursor:pointer"><input type="checkbox" id="t-daily" checked> 每日重複</label>
         <label style="display:flex;align-items:center;gap:6px;color:#94a3b8;font-size:0.82rem;cursor:pointer"><input type="checkbox" id="t-confirm"> 需家長確認</label>
       </div>
-      <button id="submit-task" class="btn-primary">✅ 新增任務</button>
+      <button id="submit-task" class="btn-primary">✅ 新增並儲存</button>
     </div>`,
   box=>{
     box.querySelectorAll(".ic-btn").forEach(btn=>btn.addEventListener("click",()=>{
       box.querySelectorAll(".ic-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
       btn.style.borderColor="#6366f1";btn.style.background="#6366f130";selIcon=btn.dataset.ic;
     }));
-    box.querySelector("#submit-task").addEventListener("click",()=>{
+    box.querySelector("#submit-task").addEventListener("click",async()=>{
       const name=box.querySelector("#t-name").value.trim();
       if(!name){showToast("⚠️ 請輸入任務名稱","#f59e0b");return;}
       child().tasks.push({id:uid(),name,icon:selIcon,points:+box.querySelector("#t-pts").value||10,xp:+box.querySelector("#t-xp").value||15,coins:+box.querySelector("#t-coins").value||5,dueTime:box.querySelector("#t-time").value,category:box.querySelector("#t-cat").value,daily:box.querySelector("#t-daily").checked,needConfirm:box.querySelector("#t-confirm").checked,completed:false});
-      closeModal();render();showToast("✅ 任務已新增！","#10b981");
+      await saveToCloud();closeModal();render();showToast("✅ 任務已新增並同步！","#10b981");
     });
   });
 }
@@ -857,24 +934,24 @@ function showAddRewardModal(){
         </div>
       </div>
       <div><label style="color:#fcd34d;font-size:0.78rem">兌換金幣</label><input id="r-cost" type="number" value="50" min="1" style="color:#fcd34d"></div>
-      <button id="submit-reward" class="btn-primary btn-gold">✅ 新增獎勵</button>
+      <button id="submit-reward" class="btn-primary btn-gold">✅ 新增並儲存</button>
     </div>`,
   box=>{
     box.querySelectorAll(".ric-btn").forEach(btn=>btn.addEventListener("click",()=>{
       box.querySelectorAll(".ric-btn").forEach(b=>{b.style.borderColor="#334155";b.style.background="transparent"});
       btn.style.borderColor="#f59e0b";btn.style.background="#f59e0b30";selIcon=btn.dataset.ic;
     }));
-    box.querySelector("#submit-reward").addEventListener("click",()=>{
+    box.querySelector("#submit-reward").addEventListener("click",async()=>{
       const name=box.querySelector("#r-name").value.trim();
       if(!name){showToast("⚠️ 請輸入獎勵名稱","#f59e0b");return;}
       child().rewards.push({id:uid(),name,icon:selIcon,cost:+box.querySelector("#r-cost").value||50});
-      closeModal();render();showToast("🏆 獎勵已新增！","#f59e0b");
+      await saveToCloud();closeModal();render();showToast("🏆 獎勵已新增並同步！","#f59e0b");
     });
   });
 }
 
 // ─────────────────────────────────
-// EVENT BINDING
+// BIND EVENTS
 // ─────────────────────────────────
 function bindEvents(){
   document.getElementById("btn-mode")?.addEventListener("click",()=>{
@@ -883,30 +960,21 @@ function bindEvents(){
   });
   document.getElementById("btn-back")?.addEventListener("click",()=>{STATE.view="switcher";render();window.scrollTo(0,0);});
   document.querySelectorAll(".nav-btn").forEach(btn=>btn.addEventListener("click",()=>{STATE.view=btn.dataset.view;render();window.scrollTo(0,0);}));
-
-  // Leaderboard tabs
   document.querySelectorAll(".lb-tab").forEach(btn=>btn.addEventListener("click",()=>{STATE.lbTab=btn.dataset.tab;render();}));
-
-  // Switcher
   document.querySelectorAll(".child-pick").forEach(btn=>btn.addEventListener("click",()=>{STATE.activeChildId=btn.dataset.id;STATE.view="home";render();window.scrollTo(0,0);}));
   document.getElementById("btn-enter-parent")?.addEventListener("click",()=>{
     showPinModal(()=>{STATE.mode="parent";if(!STATE.activeChildId)STATE.activeChildId=STATE.children[0].id;STATE.view="parent";render();});
   });
   document.querySelectorAll(".parent-child-btn").forEach(btn=>btn.addEventListener("click",()=>{STATE.activeChildId=btn.dataset.id;render();}));
-
-  // Children manager
   document.getElementById("btn-add-child")?.addEventListener("click",showAddChildModal);
   document.querySelectorAll(".edit-child-btn").forEach(btn=>btn.addEventListener("click",()=>showEditChildModal(btn.dataset.id)));
   document.querySelectorAll(".del-child-btn").forEach(btn=>btn.addEventListener("click",()=>showDelChildConfirm(btn.dataset.id)));
-
-  // Tasks & rewards
   document.querySelectorAll(".complete-btn").forEach(btn=>btn.addEventListener("click",()=>doCompleteTask(btn.dataset.id)));
   document.querySelectorAll(".redeem-btn").forEach(btn=>btn.addEventListener("click",()=>doRedeem(btn.dataset.id)));
-  document.querySelectorAll(".del-task").forEach(btn=>btn.addEventListener("click",()=>{child().tasks=child().tasks.filter(t=>t.id!=btn.dataset.id);render();showToast("🗑️ 已刪除","#64748b");}));
-  document.querySelectorAll(".del-reward").forEach(btn=>btn.addEventListener("click",()=>{child().rewards=child().rewards.filter(r=>r.id!=btn.dataset.id);render();showToast("🗑️ 已刪除","#64748b");}));
+  document.querySelectorAll(".del-task").forEach(btn=>btn.addEventListener("click",async()=>{child().tasks=child().tasks.filter(t=>t.id!=btn.dataset.id);await saveToCloud();render();showToast("🗑️ 已刪除","#64748b");}));
+  document.querySelectorAll(".del-reward").forEach(btn=>btn.addEventListener("click",async()=>{child().rewards=child().rewards.filter(r=>r.id!=btn.dataset.id);await saveToCloud();render();showToast("🗑️ 已刪除","#64748b");}));
   document.getElementById("btn-add-task")?.addEventListener("click",showAddTaskModal);
   document.getElementById("btn-add-reward")?.addEventListener("click",showAddRewardModal);
-
   document.querySelectorAll(".adj-btn").forEach(btn=>btn.addEventListener("click",()=>doAdjust(+btn.dataset.amt)));
   document.getElementById("do-adj")?.addEventListener("click",()=>{const v=parseInt(document.getElementById("custom-adj").value);if(!isNaN(v))doAdjust(v);document.getElementById("custom-adj").value="";});
   document.querySelectorAll(".confirm-btn").forEach(btn=>btn.addEventListener("click",()=>doConfirm(btn.dataset.id,true)));
@@ -916,45 +984,56 @@ function bindEvents(){
 // ─────────────────────────────────
 // ACTIONS
 // ─────────────────────────────────
-function doCompleteTask(id){
+async function doCompleteTask(id){
   const c=child(),t=c.tasks.find(x=>x.id==id);
   if(!t||t.completed)return;
-  if(t.needConfirm){(c.pendingConfirm=c.pendingConfirm||[]).push(t.id);render();showToast("⏳ 已提交！等待家長確認～","#f59e0b");return;}
+  if(t.needConfirm){(c.pendingConfirm=c.pendingConfirm||[]).push(t.id);await saveToCloud();render();showToast("⏳ 已提交！等待家長確認～","#f59e0b");return;}
   const oldLv=getLevelInfo(c.xp).current.level;
   t.completed=true;c.xp+=t.xp;c.points+=t.points;c.coins+=t.coins;
   if(!c.achievements.includes("first_task"))c.achievements.push("first_task");
   if(c.points>=500&&!c.achievements.includes("points_500"))c.achievements.push("points_500");
   if(c.coins>=100&&!c.achievements.includes("coins_100"))c.achievements.push("coins_100");
   if(c.tasks.every(x=>x.completed)&&!c.achievements.includes("tasks_all"))c.achievements.push("tasks_all");
+  await saveToCloud();
   fireParticles();
   const newLv=getLevelInfo(c.xp).current.level;
   if(newLv>oldLv){const li=getLevelInfo(c.xp);showToast(`🎉 ${c.name} 升級！成為「${li.current.name}」！`,"#6366f1");}
   else showToast(`⚡ +${t.points}點  +${t.xp}XP  +${t.coins}💰`,"#10b981");
   render();
 }
-function doRedeem(id){
+async function doRedeem(id){
   const c=child(),r=c.rewards.find(x=>x.id==id);
   if(!r||c.coins<r.cost)return;
   c.coins-=r.cost;if(!c.achievements.includes("redeem_1"))c.achievements.push("redeem_1");
-  fireParticles();render();showToast(`🎁 兌換成功：${r.name}！`,"#f59e0b");
+  await saveToCloud();fireParticles();render();showToast(`🎁 兌換成功：${r.name}！`,"#f59e0b");
 }
-function doAdjust(amt){
+async function doAdjust(amt){
   const c=child();c.points=Math.max(0,c.points+amt);
   if(amt>0){c.xp+=Math.abs(amt);c.coins+=Math.round(Math.abs(amt)/2);}
-  render();showToast(amt>0?`✅ 給 ${c.name} 加 ${amt} 點！`:`⚠️ 扣 ${c.name} ${Math.abs(amt)} 點`,amt>0?"#10b981":"#ef4444");
+  await saveToCloud();render();showToast(amt>0?`✅ 給 ${c.name} 加 ${amt} 點！`:`⚠️ 扣 ${c.name} ${Math.abs(amt)} 點`,amt>0?"#10b981":"#ef4444");
 }
-function doConfirm(id,ok){
+async function doConfirm(id,ok){
   const c=child(),t=c.tasks.find(x=>x.id==id);if(!t)return;
   c.pendingConfirm=(c.pendingConfirm||[]).filter(x=>x!=id);
   if(ok){t.completed=true;c.xp+=t.xp;c.points+=t.points;c.coins+=t.coins;fireParticles();showToast(`✅ 確認：${t.name}！+${t.points}點`,"#10b981");}
   else showToast(`❌ 已拒絕：${t.name}`,"#ef4444");
-  render();
+  await saveToCloud();render();
 }
 
 // ─────────────────────────────────
 // INIT
 // ─────────────────────────────────
-render();
+window.closeModal=closeModal; // expose for inline onclick
+
+async function init(){
+  await loadFromCloud();
+  document.getElementById("loading-screen").style.display="none";
+  document.getElementById("app").style.display="block";
+  render();
+  subscribeRealtime(); // listen for real-time updates from other devices
+}
+
+init();
 </script>
 </body>
 </html>
